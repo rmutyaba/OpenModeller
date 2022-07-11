@@ -942,7 +942,7 @@ constant ConfigFlag REPLACE_HOMOTOPY = CONFIG_FLAG(53, "replaceHomotopy",
     Gettext.gettext("Replaces homotopy(actual, simplified) with the actual expression or the simplified expression. Good for debugging models which use homotopy. The default is to not replace homotopy."));
 
 constant ConfigFlag GENERATE_SYMBOLIC_JACOBIAN = CONFIG_FLAG(54, "generateSymbolicJacobian",
-  NONE(), EXTERNAL(), BOOL_FLAG(false), NONE(),
+  NONE(), EXTERNAL(), BOOL_FLAG(true), NONE(),
   Gettext.gettext("Generates symbolic Jacobian matrix, where der(x) is differentiated w.r.t. x. This matrix can be used by dassl or ida solver with simulation flag '-jacobian'."));
 
 constant ConfigFlag GENERATE_SYMBOLIC_LINEARIZATION = CONFIG_FLAG(55, "generateSymbolicLinearization",
