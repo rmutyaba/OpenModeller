@@ -33,7 +33,6 @@ encapsulated uniontype JSON
 
 import LexerJSON;
 import LexerJSON.{Token,TokenId,tokenContent,printToken,tokenSourceInfo};
-import IOStream;
 import Vector;
 import UnorderedMap;
 
@@ -41,12 +40,17 @@ protected
 
 import Error;
 import MetaModelica.Dangerous.listReverseInPlace;
+import Util;
+import Print;
 
 public
 
 record OBJECT
   UnorderedMap<String, JSON> values;
 end OBJECT;
+record LIST_OBJECT
+  list<tuple<String, JSON>> values;
+end LIST_OBJECT;
 record ARRAY
   Vector<JSON> values;
 end ARRAY;
@@ -69,8 +73,12 @@ end NULL;
 function emptyObject
   output JSON obj;
 algorithm
-  obj := OBJECT(UnorderedMap.new<JSON>(stringHashDjb2Mod, stringEq));
+  obj := OBJECT(UnorderedMap.new<JSON>(stringHashDjb2, stringEq));
 end emptyObject;
+
+function emptyListObject
+  output JSON obj = LIST_OBJECT({});
+end emptyListObject;
 
 function fromPair
   input String key;
@@ -144,6 +152,14 @@ algorithm
   end match;
 end addElement;
 
+function addElementNotNull
+  input JSON value;
+  input JSON obj;
+  output JSON outObj;
+algorithm
+  outObj := if isNull(value) then obj else addElement(value, obj);
+end addElementNotNull;
+
 function addPair
   "Adds a key-value pair to a JSON object, or returns a new object with the
    key-value pair if the JSON is null."
@@ -159,159 +175,312 @@ algorithm
       then
         obj;
 
+    case LIST_OBJECT()
+      then LIST_OBJECT((key, value) :: obj.values);
+
     case NULL()
-      then addPair(key, value, emptyObject());
+      then addPair(key, value, emptyListObject());
   end match;
 end addPair;
 
-function toStream
+function addPairNotNull
+  "Adds a key-value pair to a JSON object if the value is not null."
+  input String key;
   input JSON value;
-  input Boolean prettyPrint = false;
-  output IOStream.IOStream s;
+  input JSON obj;
+  output JSON outObj;
 algorithm
-  s := IOStream.create(getInstanceName(), IOStream.IOStreamType.LIST());
-
-  if prettyPrint then
-    s := appendStreamPP(value, "", s);
-  else
-    s := appendStream(value, s);
-  end if;
-end toStream;
-
-function appendStream
-  input JSON value;
-  input output IOStream.IOStream s;
-algorithm
-  s := match value
-    case STRING() then appendStreamString(value.str, s);
-    case TRUE() then IOStream.append(s, "true");
-    case FALSE() then IOStream.append(s, "false");
-    case NULL() then IOStream.append(s, "null");
-    case INTEGER() then IOStream.append(s, String(value.i));
-    case NUMBER() then IOStream.append(s, String(value.r));
-    case ARRAY() then appendStreamArray(value.values, s);
-    case OBJECT() then appendStreamObject(value.values, s);
-  end match;
-end appendStream;
-
-function appendStreamString
-  input String str;
-  input output IOStream.IOStream s;
-algorithm
-  s := IOStream.append(s, "\"");
-  s := IOStream.append(s, System.escapedString(str, true));
-  s := IOStream.append(s, "\"");
-end appendStreamString;
-
-function appendStreamArray
-  input Vector<JSON> values;
-  input output IOStream.IOStream s;
-algorithm
-  s := IOStream.append(s, "[");
-
-  for i in 1:Vector.size(values) loop
-    if i <> 1 then
-      s := IOStream.append(s, ", ");
-    end if;
-
-    s := appendStream(Vector.getNoBounds(values, i), s);
-  end for;
-
-  s := IOStream.append(s, "]");
-end appendStreamArray;
-
-function appendStreamObject
-  input UnorderedMap<String, JSON> map;
-  input output IOStream.IOStream s;
-algorithm
-  s := IOStream.append(s, "{");
-
-  if not UnorderedMap.isEmpty(map) then
-    s := appendStreamString(UnorderedMap.keyAt(map, 1), s);
-    s := IOStream.append(s, ":");
-    s := appendStream(UnorderedMap.valueAt(map, 1), s);
-
-    for i in 2:UnorderedMap.size(map) loop
-      s := IOStream.append(s, ", ");
-      s := appendStreamString(UnorderedMap.keyAt(map, i), s);
-      s := IOStream.append(s, ":");
-      s := appendStream(UnorderedMap.valueAt(map, i), s);
-    end for;
-  end if;
-
-  s := IOStream.append(s, "}");
-end appendStreamObject;
-
-function appendStreamPP
-  input JSON value;
-  input String indent;
-  input output IOStream.IOStream s;
-algorithm
-  s := match value
-    case STRING() then appendStreamString(value.str, s);
-    case TRUE() then IOStream.append(s, "true");
-    case FALSE() then IOStream.append(s, "false");
-    case NULL() then IOStream.append(s, "null");
-    case INTEGER() then IOStream.append(s, String(value.i));
-    case NUMBER() then IOStream.append(s, String(value.r));
-    case ARRAY() then appendStreamArrayPP(value.values, indent, s);
-    case OBJECT() then appendStreamObjectPP(value.values, indent, s);
-  end match;
-end appendStreamPP;
-
-function appendStreamArrayPP
-  input Vector<JSON> values;
-  input String indent;
-  input output IOStream.IOStream s;
-algorithm
-  s := IOStream.append(s, "[\n");
-
-  for i in 1:Vector.size(values) loop
-    if i <> 1 then
-      s := IOStream.append(s, ",\n");
-    end if;
-
-    s := IOStream.append(s, indent + "  ");
-    s := appendStreamPP(Vector.getNoBounds(values, i), indent + "  ", s);
-  end for;
-
-  s := IOStream.append(s, "\n");
-  s := IOStream.append(s, indent);
-  s := IOStream.append(s, "]");
-end appendStreamArrayPP;
-
-function appendStreamObjectPP
-  input UnorderedMap<String, JSON> map;
-  input String indent;
-  input output IOStream.IOStream s;
-algorithm
-  s := IOStream.append(s, "{\n");
-
-  if not UnorderedMap.isEmpty(map) then
-    s := IOStream.append(s, indent + "  ");
-    s := appendStreamString(UnorderedMap.keyAt(map, 1), s);
-    s := IOStream.append(s, ": ");
-    s := appendStreamPP(UnorderedMap.valueAt(map, 1), indent + "  ", s);
-
-    for i in 2:UnorderedMap.size(map) loop
-      s := IOStream.append(s, ",\n  ");
-      s := IOStream.append(s, indent);
-      s := appendStreamString(UnorderedMap.keyAt(map, i), s);
-      s := IOStream.append(s, ": ");
-      s := appendStreamPP(UnorderedMap.valueAt(map, i), indent + "  ", s);
-    end for;
-  end if;
-
-  s := IOStream.append(s, "\n");
-  s := IOStream.append(s, indent);
-  s := IOStream.append(s, "}");
-end appendStreamObjectPP;
+  outObj := if isNull(value) then obj else addPair(key, value, obj);
+end addPairNotNull;
 
 function toString
   input JSON value;
   input Boolean prettyPrint = false;
-  output String str = IOStream.string(toStream(value, prettyPrint));
+  output String str;
+protected
+  Integer handle;
+algorithm
+  handle := Print.saveAndClearBuf();
+
+  if prettyPrint then
+    toStringPP_work(value);
+  else
+    toString_work(value);
+  end if;
+
+  str := Print.getString();
+  Print.restoreBuf(handle);
 end toString;
+
+function toString_work
+  input JSON value;
+algorithm
+  () := match value
+    case STRING()
+      algorithm
+        Print.printBuf("\"");
+        Print.printBuf(System.escapedString(value.str, true));
+        Print.printBuf("\"");
+      then
+        ();
+
+    case TRUE()
+      algorithm
+        Print.printBuf("true");
+      then
+        ();
+
+    case FALSE()
+      algorithm
+        Print.printBuf("false");
+      then
+        ();
+
+    case NULL()
+      algorithm
+        Print.printBuf("null");
+      then
+        ();
+
+    case INTEGER()
+      algorithm
+        Print.printBuf(String(value.i));
+      then
+        ();
+
+    case NUMBER()
+      algorithm
+        Print.printBuf(String(value.r));
+      then
+        ();
+
+    case ARRAY()
+      algorithm
+        toString_array(value.values);
+      then
+        ();
+
+    case OBJECT()
+      algorithm
+        toString_object(value.values);
+      then
+        ();
+
+    case LIST_OBJECT()
+      algorithm
+        toString_listObject(value.values);
+      then
+        ();
+
+    else ();
+  end match;
+end toString_work;
+
+function toString_array
+  input Vector<JSON> values;
+algorithm
+  Print.printBuf("[");
+
+  for i in 1:Vector.size(values) loop
+    if i <> 1 then
+      Print.printBuf(", ");
+    end if;
+
+    toString_work(Vector.getNoBounds(values, i));
+  end for;
+
+  Print.printBuf("]");
+end toString_array;
+
+function toString_object
+  input UnorderedMap<String, JSON> map;
+algorithm
+  Print.printBuf("{");
+
+  for i in 1:UnorderedMap.size(map) loop
+    if i <> 1 then
+      Print.printBuf(", ");
+    end if;
+
+    Print.printBuf("\"");
+    Print.printBuf(UnorderedMap.keyAt(map, i));
+    Print.printBuf("\":");
+    toString_work(UnorderedMap.valueAt(map, i));
+  end for;
+
+  Print.printBuf("}");
+end toString_object;
+
+function toString_listObject
+  input list<tuple<String, JSON>> object;
+protected
+  Boolean first = true;
+  String key;
+  JSON value;
+algorithm
+  Print.printBuf("{");
+
+  for entry in listReverse(object) loop
+    (key, value) := entry;
+
+    if first then
+      first := false;
+    else
+      Print.printBuf(", ");
+    end if;
+
+    Print.printBuf("\"");
+    Print.printBuf(key);
+    Print.printBuf("\":");
+    toString_work(value);
+  end for;
+
+  Print.printBuf("}");
+end toString_listObject;
+
+function toStringPP_work
+  input JSON value;
+  input String indent = "";
+algorithm
+  () := match value
+    case STRING()
+      algorithm
+        Print.printBuf("\"");
+        Print.printBuf(System.escapedString(value.str, true));
+        Print.printBuf("\"");
+      then
+        ();
+
+    case TRUE()
+      algorithm
+        Print.printBuf("true");
+      then
+        ();
+
+    case FALSE()
+      algorithm
+        Print.printBuf("false");
+      then
+        ();
+
+    case NULL()
+      algorithm
+        Print.printBuf("null");
+      then
+        ();
+
+    case INTEGER()
+      algorithm
+        Print.printBuf(String(value.i));
+      then
+        ();
+
+    case NUMBER()
+      algorithm
+        Print.printBuf(String(value.r));
+      then
+        ();
+
+    case ARRAY()
+      algorithm
+        toStringPP_array(value.values, indent);
+      then
+        ();
+
+    case OBJECT()
+      algorithm
+        toStringPP_object(value.values, indent);
+      then
+        ();
+
+    case LIST_OBJECT()
+      algorithm
+        toStringPP_listObject(value.values, indent);
+      then
+        ();
+
+    else ();
+  end match;
+end toStringPP_work;
+
+function toStringPP_array
+  input Vector<JSON> values;
+  input String indent;
+protected
+  String next_indent = indent + "  ";
+algorithm
+  Print.printBuf("[\n");
+
+  for i in 1:Vector.size(values) loop
+    if i <> 1 then
+      Print.printBuf(",\n");
+    end if;
+
+    Print.printBuf(next_indent);
+    toStringPP_work(Vector.getNoBounds(values, i), next_indent);
+  end for;
+
+  Print.printBuf("\n");
+  Print.printBuf(indent);
+  Print.printBuf("]");
+end toStringPP_array;
+
+function toStringPP_object
+  input UnorderedMap<String, JSON> map;
+  input String indent;
+protected
+  String next_indent = indent + "  ";
+algorithm
+  Print.printBuf("{\n");
+
+  for i in 1:UnorderedMap.size(map) loop
+    if i <> 1 then
+      Print.printBuf(",\n");
+    end if;
+
+    Print.printBuf(next_indent);
+    Print.printBuf("\"");
+    Print.printBuf(UnorderedMap.keyAt(map, i));
+    Print.printBuf("\": ");
+    toStringPP_work(UnorderedMap.valueAt(map, i), next_indent);
+  end for;
+
+  Print.printBuf("\n");
+  Print.printBuf(indent);
+  Print.printBuf("}");
+end toStringPP_object;
+
+function toStringPP_listObject
+  input list<tuple<String, JSON>> object;
+  input String indent;
+protected
+  Boolean first = true;
+  String key;
+  JSON value;
+  String next_indent = indent + "  ";
+algorithm
+  Print.printBuf("{\n");
+
+  for entry in listReverse(object) loop
+    (key, value) := entry;
+
+    if first then
+      first := false;
+    else
+      Print.printBuf(",\n");
+    end if;
+
+    Print.printBuf(next_indent);
+    Print.printBuf("\"");
+    Print.printBuf(key);
+    Print.printBuf("\": ");
+    toStringPP_work(value, next_indent);
+  end for;
+
+  Print.printBuf("\n");
+  Print.printBuf(indent);
+  Print.printBuf("}");
+end toStringPP_listObject;
 
 partial function partialParser
   input list<Token> inTokens;
@@ -339,6 +508,16 @@ function hasKey
 algorithm
   b := match obj
     case OBJECT() then UnorderedMap.contains(str, obj.values);
+    case LIST_OBJECT()
+      algorithm
+        b := false;
+        for entry in obj.values loop
+          if Util.tuple21(entry) == str then
+            b := true;
+          end if;
+        end for;
+      then
+        b;
   end match;
 end hasKey;
 
@@ -349,6 +528,16 @@ function get
 algorithm
   out := match obj
     case OBJECT() then UnorderedMap.getOrFail(str, obj.values);
+    case LIST_OBJECT()
+      algorithm
+        for entry in obj.values loop
+          if Util.tuple21(entry) == str then
+            out := Util.tuple22(entry);
+            return;
+          end if;
+        end for;
+      then
+        fail();
   end match;
 end get;
 
@@ -357,11 +546,21 @@ function getOrDefault
   input String str;
   input JSON default;
   output JSON out;
-protected
-  UnorderedMap<String, JSON> values;
 algorithm
-  OBJECT(values = values) := obj;
-  out := UnorderedMap.getOrDefault(str, values, default);
+  out := match obj
+    case OBJECT() then UnorderedMap.getOrDefault(str, obj.values, default);
+    case LIST_OBJECT()
+      algorithm
+        for entry in obj.values loop
+          if Util.tuple21(entry) == str then
+            out := Util.tuple22(entry);
+            return;
+          end if;
+        end for;
+      then
+        default;
+    else default;
+  end match;
 end getOrDefault;
 
 function at
@@ -387,6 +586,7 @@ function getStringList
 algorithm
   strl := match obj
     case OBJECT() then list(getString(v) for v in UnorderedMap.valueList(obj.values));
+    case LIST_OBJECT() then listReverse(getString(Util.tuple22(v)) for v in obj.values);
     case ARRAY() then Vector.mapToList(obj.values, getString);
   end match;
 end getStringList;
@@ -397,6 +597,7 @@ function getKeys
 algorithm
   keys := match obj
     case OBJECT() then UnorderedMap.keyList(obj.values);
+    case LIST_OBJECT() then listReverse(Util.tuple21(e) for e in obj.values);
   end match;
 end getKeys;
 
@@ -416,6 +617,7 @@ function size
 algorithm
   sz := match obj
     case OBJECT() then UnorderedMap.size(obj.values);
+    case LIST_OBJECT() then listLength(obj.values);
     case ARRAY() then Vector.size(obj.values);
     else 1;
   end match;
@@ -543,7 +745,7 @@ protected
   String key;
   Boolean cont;
 algorithm
-  values := UnorderedMap.new<JSON>(stringHashDjb2Mod, stringEq);
+  values := UnorderedMap.new<JSON>(stringHashDjb2, stringEq);
   tokens := parse_expected_token(tokens, TokenId.OBJECTBEGIN);
   cont := peek_id(tokens) <> TokenId.ARRAYEND;
   while cont loop

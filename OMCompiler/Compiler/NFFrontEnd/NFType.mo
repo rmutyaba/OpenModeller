@@ -32,6 +32,7 @@
 encapsulated uniontype NFType
 protected
   import Type = NFType;
+  import Array;
   import List;
   import Class = NFClass;
   import IOStream;
@@ -133,6 +134,12 @@ public
     Type falseType;
     Branch matchedBranch;
   end CONDITIONAL_ARRAY;
+
+  record UNTYPED
+    "Used by untyped components to store type information needed during typing."
+    InstNode typeNode;
+    array<Dimension> dimensions;
+  end UNTYPED;
 
   // TODO: Fix constants in uniontypes and use these wherever applicable to
   // speed up comparisons using referenceEq.
@@ -455,6 +462,20 @@ public
     end match;
   end isComplex;
 
+  function complexNode
+    input Type ty;
+    output InstNode node;
+  algorithm
+    COMPLEX(cls = node) := ty;
+  end complexNode;
+
+  function complexComponents
+    input Type ty;
+    output array<InstNode> comps;
+  algorithm
+    comps := ClassTree.getComponents(Class.classTree(InstNode.getClass(complexNode(ty))));
+  end complexComponents;
+
   function isConnector
     input Type ty;
     output Boolean isConnector;
@@ -577,6 +598,7 @@ public
   algorithm
     isKnown := match ty
       case UNKNOWN() then false;
+      case UNTYPED() then false;
       else true;
     end match;
   end isKnown;
@@ -686,6 +708,7 @@ public
       case FUNCTION() then arrayDims(Function.returnType(ty.fn));
       case METABOXED() then arrayDims(ty.ty);
       case CONDITIONAL_ARRAY() then List.fill(Dimension.UNKNOWN(), dimensionCount(ty.trueType));
+      case UNTYPED() then arrayList(ty.dimensions);
       else {};
     end match;
   end arrayDims;
@@ -730,6 +753,7 @@ public
       case CONDITIONAL_ARRAY() then dimensionCount(ty.trueType);
       case FUNCTION() then dimensionCount(Function.returnType(ty.fn));
       case METABOXED() then dimensionCount(ty.ty);
+      case UNTYPED() then arrayLength(ty.dimensions);
       else 0;
     end match;
   end dimensionCount;
@@ -853,7 +877,7 @@ public
       case Type.ENUMERATION() then "enumeration " + AbsynUtil.pathString(ty.typePath) +
         "(" + stringDelimitList(ty.literals, ", ") + ")";
       case Type.ENUMERATION_ANY() then "enumeration(:)";
-      case Type.ARRAY() then toString(ty.elementType) + "[" + stringDelimitList(List.map(ty.dimensions, Dimension.toString), ", ") + "]";
+      case Type.ARRAY() then List.toString(ty.dimensions, Dimension.toString, toString(ty.elementType), "[", ", ", "]", false);
       case Type.TUPLE() then "(" + stringDelimitList(List.map(ty.types, toString), ", ") + ")";
       case Type.NORETCALL() then "()";
       case Type.UNKNOWN() then "unknown()";
@@ -866,6 +890,7 @@ public
 
       case Type.ANY() then "$ANY$";
       case Type.CONDITIONAL_ARRAY() then toString(ty.trueType) + "|" + toString(ty.falseType);
+      case Type.UNTYPED() then List.toString(arrayList(ty.dimensions), Dimension.toString, InstNode.name(ty.typeNode), "[", ", ", "]", false);
       else
         algorithm
           Error.assertion(false, getInstanceName() + " got unknown type: " + anyString(ty), sourceInfo());
@@ -886,7 +911,7 @@ public
       case Type.CLOCK() then "Clock";
       case Type.ENUMERATION() then Util.makeQuotedIdentifier(AbsynUtil.pathString(ty.typePath));
       case Type.ENUMERATION_ANY() then "enumeration(:)";
-      case Type.ARRAY() then toFlatString(ty.elementType) + "[" + stringDelimitList(List.map(ty.dimensions, Dimension.toFlatString), ", ") + "]";
+      case Type.ARRAY() then List.toString(ty.dimensions, Dimension.toFlatString, toFlatString(ty.elementType), "[", ", ", "]", false);
       case Type.TUPLE() then "(" + stringDelimitList(List.map(ty.types, toFlatString), ", ") + ")";
       case Type.NORETCALL() then "()";
       case Type.UNKNOWN() then "unknown()";
@@ -896,6 +921,7 @@ public
       case Type.POLYMORPHIC() then "<" + ty.name + ">";
       case Type.ANY() then "$ANY$";
       case Type.CONDITIONAL_ARRAY() then toFlatString(ty.trueType) + "|" + toFlatString(ty.falseType);
+      case Type.UNTYPED() then List.toString(arrayList(ty.dimensions), Dimension.toFlatString, InstNode.name(ty.typeNode), "[", ", ", "]", false);
       else
         algorithm
           Error.assertion(false, getInstanceName() + " got unknown type: " + anyString(ty), sourceInfo());
@@ -1150,6 +1176,11 @@ public
 
       case (TUPLE(), TUPLE()) then false;
       case (COMPLEX(), COMPLEX()) then InstNode.isSame(ty1.cls, ty2.cls);
+
+      case (UNTYPED(), UNTYPED())
+        then InstNode.refEqual(ty1.typeNode, ty2.typeNode) and
+             Array.isEqualOnTrue(ty1.dimensions, ty2.dimensions, Dimension.isEqualKnown);
+
       else true;
     end match;
   end isEqual;
@@ -1210,7 +1241,7 @@ public
         array<Record.Field> fields = listArray(field_lst);
 
       case COMPLEX(complexTy = ComplexType.RECORD(constructor = rec_node)) algorithm
-        indexMap := UnorderedMap.new<Integer>(stringHashDjb2Mod, stringEq, arrayLength(fields));
+        indexMap := UnorderedMap.new<Integer>(stringHashDjb2, stringEq, arrayLength(fields));
         updateRecordFieldsIndexMap(fields, indexMap);
       then COMPLEX(recordType.cls, ComplexType.RECORD(rec_node, fields, indexMap));
 

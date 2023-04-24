@@ -67,10 +67,10 @@ char* omc_wchar_to_multibyte_str(const wchar_t* in_wc_str);
 
 #endif // defined(__MINGW32__) || defined(_MSC_VER)
 
-
 FILE* omc_fopen(const char *filename, const char *mode);
-
+int omc_fclose(FILE * stream);
 size_t omc_fread(void *buffer, size_t size, size_t count, FILE *stream, int allow_early_eof);
+size_t omc_fwrite(void * buffer, size_t size, size_t count, FILE * stream);
 
 #if defined(__MINGW32__) || defined(_MSC_VER)
 typedef struct _stat omc_stat_t;
@@ -78,8 +78,19 @@ typedef struct _stat omc_stat_t;
 typedef struct stat omc_stat_t;
 #endif
 int omc_stat(const char *filename, omc_stat_t *statbuf);
+int omc_lstat(const char *filename, omc_stat_t *statbuf);
+
+/**
+ * @brief checks if a file/folder exists on the system.
+ * NOTE: Will return success even for directories, i.e., will not confirm that it is indeed a file.
+ *
+ * @param filename  the filename to check for existence.
+ * @return int  returns 1 if the file/folder exists, 0 otherwise.
+ */
+int omc_file_exists(const char* filename);
 
 int omc_unlink(const char *filename);
+int omc_rename(const char *source, const char *dest);
 
 #if defined(__MINGW32__) || defined(_MSC_VER)
 wchar_t* longabspath(wchar_t* unicodePath);

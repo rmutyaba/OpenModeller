@@ -34,6 +34,7 @@
 #include <math.h>
 #include <string.h>
 
+#include "../jacobian_util.h"
 #include "../../util/simulation_options.h"
 #include "../../util/omc_error.h"
 #include "../../util/omc_file.h"
@@ -44,13 +45,13 @@
 #include "nonlinearSolverHybrd.h"
 #include "nonlinearSolverNewton.h"
 #include "newtonIteration.h"
+#include "newton_diagnostics.h"
 #endif
 #include "nonlinearSolverHomotopy.h"
 #include "../options.h"
 #include "../simulation_info_json.h"
 #include "../simulation_runtime.h"
 #include "model_help.h"
-#include "../../util/jacobian_util.h"
 
 /* for try and catch simulationJumpBuffer */
 #include "../../meta/meta_modelica.h"
@@ -189,7 +190,7 @@ int print_csvLineCallStats(OMC_WRITE_CSV* csvData, int num, double time,
   fputc(csvData->seperator,csvData->handle);
 
   /* solved system */
-  sprintf(buffer, "%s", (solved == NLS_SOLVED || solved == NLS_SOLVED_LESS_ACCURARCY)?"TRUE":"FALSE");
+  sprintf(buffer, "%s", (solved == NLS_SOLVED || solved == NLS_SOLVED_LESS_ACCURACY)?"TRUE":"FALSE");
   omc_write_csv(csvData, buffer);
 
   /* finish line */
@@ -425,7 +426,7 @@ void initializeNonlinearSystemData(DATA *data, threadData_t *threadData, NONLINE
   nonlinsys->resValues = (double*) malloc(size*sizeof(double));
 
   /* allocate value list*/
-  nonlinsys->oldValueList = (void*) allocValueList(1);
+  nonlinsys->oldValueList = allocValueList(1, nonlinsys->size);
 
   nonlinsys->lastTimeSolved = 0.0;
 
@@ -434,7 +435,7 @@ void initializeNonlinearSystemData(DATA *data, threadData_t *threadData, NONLINE
   nonlinsys->min = (double*) malloc(size*sizeof(double));
   nonlinsys->max = (double*) malloc(size*sizeof(double));
   /* Init sparsitiy pattern */
-  nonlinsys->initializeStaticNLSData(data, threadData, nonlinsys, 1 /* true */);
+  nonlinsys->initializeStaticNLSData(data, threadData, nonlinsys, 1 /* true */, 1 /* true */);
 
   if(nonlinsys->isPatternAvailable) {
     /* only test for singularity if sparsity pattern is supposed to be there */
@@ -659,7 +660,7 @@ int updateStaticDataOfNonlinearSystems(DATA *data, threadData_t *threadData)
 
   for(i=0; i<data->modelData->nNonLinearSystems; ++i)
   {
-    nonlinsys[i].initializeStaticNLSData(data, threadData, &nonlinsys[i], 0 /* false */);
+    nonlinsys[i].initializeStaticNLSData(data, threadData, &nonlinsys[i], 0 /* false */, 0 /* false */);
   }
 
   messageClose(LOG_NLS);
@@ -690,6 +691,7 @@ void freeNonlinearSyst(DATA* data, threadData_t* threadData, NONLINEAR_SYSTEM_DA
   free(nonlinsys->min);
   free(nonlinsys->max);
   freeValueList(nonlinsys->oldValueList, 1);
+  freeNonlinearPattern(nonlinsys->nonlinearPattern);
 
   /* Free CSV data */
 #if !defined(OMC_MINIMAL_RUNTIME)
@@ -837,7 +839,7 @@ void printNonLinearFinishInfo(int logName, DATA* data, NONLINEAR_SYSTEM_DATA *no
   case NLS_SOLVED:
     infoStreamPrint(logName, 1, "Solution status: SOLVED");
     break;
-  case NLS_SOLVED_LESS_ACCURARCY:
+  case NLS_SOLVED_LESS_ACCURACY:
     infoStreamPrint(logName, 1, "Solution status: SOLVED with less accuracy");
     break;
   case NLS_FAILED:
@@ -870,9 +872,9 @@ void printNonLinearFinishInfo(int logName, DATA* data, NONLINEAR_SYSTEM_DATA *no
 int getInitialGuess(NONLINEAR_SYSTEM_DATA *nonlinsys, double time)
 {
   /* value extrapolation */
-  printValuesListTimes((VALUES_LIST*)nonlinsys->oldValueList);
+  printValuesListTimes(nonlinsys->oldValueList->valueList);
   /* if list is empty use current start values */
-  if (listLen(((VALUES_LIST*)nonlinsys->oldValueList)->valueList)==0)
+  if (listLen(nonlinsys->oldValueList->valueList)==0)
   {
     /* use old value if no values are stored in the list */
     memcpy(nonlinsys->nlsx, nonlinsys->nlsxOld, nonlinsys->size*(sizeof(double)));
@@ -880,7 +882,7 @@ int getInitialGuess(NONLINEAR_SYSTEM_DATA *nonlinsys, double time)
   else
   {
     /* get extrapolated values */
-    getValues((VALUES_LIST*)nonlinsys->oldValueList, time, nonlinsys->nlsxExtrapolation, nonlinsys->nlsxOld);
+    getValues(nonlinsys->oldValueList->valueList, time, nonlinsys->nlsxExtrapolation, nonlinsys->nlsxOld);
     memcpy(nonlinsys->nlsx, nonlinsys->nlsxOld, nonlinsys->size*(sizeof(double)));
   }
 
@@ -898,27 +900,34 @@ int getInitialGuess(NONLINEAR_SYSTEM_DATA *nonlinsys, double time)
  */
 int updateInitialGuessDB(NONLINEAR_SYSTEM_DATA *nonlinsys, double time, EVAL_CONTEXT context)
 {
+  /* Variables */
+  VALUE* tmpNode;
+
   /* write solution to oldValue list for extrapolation */
   if (nonlinsys->solved == NLS_SOLVED)
   {
     /* do not use solution of jacobian for next extrapolation */
     if (context == CONTEXT_ODE || context == CONTEXT_ALGEBRAIC || context == CONTEXT_EVENTS)
     {
-      addListElement((VALUES_LIST*)nonlinsys->oldValueList,
-                     createValueElement(nonlinsys->size, time, nonlinsys->nlsx));
+      tmpNode = createValueElement(nonlinsys->size, time, nonlinsys->nlsx);
+      addListElement(nonlinsys->oldValueList->valueList,
+                     tmpNode);
+      freeValue(tmpNode);
     }
   }
-  else if (nonlinsys->solved == NLS_SOLVED_LESS_ACCURARCY)
+  else if (nonlinsys->solved == NLS_SOLVED_LESS_ACCURACY)
   {
-    if (listLen(((VALUES_LIST*)nonlinsys->oldValueList)->valueList)>0)
+    if (listLen((nonlinsys->oldValueList)->valueList)>0)
     {
-      cleanValueList((VALUES_LIST*)nonlinsys->oldValueList, NULL);
+      cleanValueList(nonlinsys->oldValueList->valueList, NULL);
     }
     /* do not use solution of jacobian for next extrapolation */
     if (context == CONTEXT_ODE || context == CONTEXT_ALGEBRAIC || context == CONTEXT_EVENTS)
     {
-      addListElement((VALUES_LIST*)nonlinsys->oldValueList,
-                     createValueElement(nonlinsys->size, time, nonlinsys->nlsx));
+      tmpNode = createValueElement(nonlinsys->size, time, nonlinsys->nlsx);
+      addListElement(nonlinsys->oldValueList->valueList,
+                     tmpNode);
+      freeValue(tmpNode);
     }
   }
   return 0;
@@ -987,7 +996,7 @@ int updateInnerEquation(RESIDUAL_USERDATA* resUserData, int sysNumber, int discr
  * @param threadData          Thread data for error handling.
  * @param nonlinsys           Pointer to non-linear system.
  * @return NLS_SOLVER_STATUS  Return NLS_SOLVED on success,
- *                            NLS_SOLVED_LESS_ACCURARCY if a less accurate solution was found and
+ *                            NLS_SOLVED_LESS_ACCURACY if a less accurate solution was found and
  *                            NLS_FAILED otherwise.
  */
 NLS_SOLVER_STATUS solveNLS(DATA *data, threadData_t *threadData, NONLINEAR_SYSTEM_DATA* nonlinsys)
@@ -1207,6 +1216,15 @@ int solve_nonlinear_system(DATA *data, threadData_t *threadData, int sysNumber)
   /* print debug initial information */
   infoStreamPrint(LOG_NLS, 1, "############ Solve nonlinear system %ld at time %g ############", nonlinsys->equationIndex, data->localData[0]->timeValue);
   printNonLinearInitialInfo(LOG_NLS, data, nonlinsys);
+
+#if !defined(OMC_MINIMAL_RUNTIME)
+  /* Improve start values with newton diagnostics method */
+  if(omc_flag[FLAG_NEWTON_DIAGNOSTICS] && data->simulationInfo->initial && sysNumber == 0) {
+    infoStreamPrint(LOG_NLS, 0, "Running newton diagnostics");
+    newtonDiagnostics(data, threadData, sysNumber);
+  }
+#endif
+
 
   /* try */
 #ifndef OMC_EMCC
@@ -1430,7 +1448,7 @@ int check_nonlinear_solution(DATA *data, int printFailingSystems, int sysNumber)
   {
     int index = nonlinsys[i].equationIndex, indexes[2] = {1,index};
     if (!printFailingSystems) return 1;
-    warningStreamPrintWithEquationIndexes(LOG_NLS, 0, indexes, "nonlinear system %d fails: at t=%g", index, data->localData[0]->timeValue);
+    warningStreamPrintWithEquationIndexes(LOG_NLS, omc_dummyFileInfo, 0, indexes, "nonlinear system %d fails: at t=%g", index, data->localData[0]->timeValue);
     if(data->simulationInfo->initial)
     {
       warningStreamPrint(LOG_INIT, 1, "proper start-values for some of the following iteration variables might help");
@@ -1458,7 +1476,7 @@ int check_nonlinear_solution(DATA *data, int printFailingSystems, int sysNumber)
     messageCloseWarning(LOG_INIT);
     return 1;
   }
-  if(nonlinsys[i].solved == NLS_SOLVED_LESS_ACCURARCY)
+  if(nonlinsys[i].solved == NLS_SOLVED_LESS_ACCURACY)
   {
     nonlinsys[i].solved = NLS_SOLVED;
     return 2;
@@ -1484,7 +1502,7 @@ void cleanUpOldValueListAfterEvent(DATA *data, double time)
   NONLINEAR_SYSTEM_DATA* nonlinsys = data->simulationInfo->nonlinearSystemData;
 
   for(i=0; i<data->modelData->nNonLinearSystems; ++i) {
-    cleanValueListbyTime(nonlinsys[i].oldValueList, time);
+    cleanValueListbyTime(nonlinsys[i].oldValueList->valueList, time);
   }
 }
 

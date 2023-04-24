@@ -140,7 +140,7 @@ void setGlobalVerboseLevel(int argc, char**argv)
     return; // no lv flag given.
   }
 
-  /* default activated, but it can be disabled with -stdout or -assert */
+  /* default activated, but it can be disabled with -LOG_STDOUT or -LOG_ASSERT */
   useStream[LOG_STDOUT] = 1;
   useStream[LOG_ASSERT] = 1;
 
@@ -175,11 +175,13 @@ void setGlobalVerboseLevel(int argc, char**argv)
         {
           useStream[i] = 1;
           error = 0;
+          break;
         }
         else if(flag == string("-") + string(LOG_STREAM_NAME[i]))
         {
           useStream[i] = 0;
           error = 0;
+          break;
         }
       }
 
@@ -250,8 +252,12 @@ void setGlobalVerboseLevel(int argc, char**argv)
 }
 
 
-/* Read value of flag lv_time to set time interval in which loggin is active */
-void setGlobalLoggingTime(int argc, char**argv, SIMULATION_INFO *simulationInfo)
+/**
+ * @brief Read value of flag lv_time to set time interval in which logging is active.
+ *
+ * @param simulationInfo    Simulation info struct
+ */
+void setGlobalLoggingTime(SIMULATION_INFO *simulationInfo)
 {
   const char *flagStr = omc_flagValue[FLAG_LV_TIME];
   const string *flags = flagStr ? new string(flagStr) : NULL;
@@ -274,7 +280,7 @@ void setGlobalLoggingTime(int argc, char**argv, SIMULATION_INFO *simulationInfo)
   loggingStopTime = om_strtod(secondPart, &endptr);
   if (*endptr)
   {
-    throwStreamPrint(NULL, "Simulation flag %s expects two real numbers, seperated by a comata. Got: %s", FLAG_NAME[FLAG_LV_TIME], flagStr);
+    throwStreamPrint(NULL, "Simulation flag %s expects two real numbers, separated by a commas. Got: %s", FLAG_NAME[FLAG_LV_TIME], flagStr);
   }
 
   /* Check flag input */
@@ -287,7 +293,7 @@ void setGlobalLoggingTime(int argc, char**argv, SIMULATION_INFO *simulationInfo)
   simulationInfo->useLoggingTime = 1;
   simulationInfo->loggingTimeRecord[0] = loggingStartTime;
   simulationInfo->loggingTimeRecord[1] = loggingStopTime;
-  infoStreamPrint(LOG_STDOUT, 0, "Time dependent logging enabled. Activate loggin in intervall [%f, %f]", simulationInfo->loggingTimeRecord[0], simulationInfo->loggingTimeRecord[1]);
+  infoStreamPrint(LOG_STDOUT, 0, "Time dependent logging enabled. Activate logging in interval [%f, %f]", simulationInfo->loggingTimeRecord[0], simulationInfo->loggingTimeRecord[1]);
 
   /* Deactivate Logging */
   deactivateLogging();
@@ -546,6 +552,8 @@ int startNonInteractiveSimulation(int argc, char**argv, DATA* data, threadData_t
     data->modelData->resultFileName = GC_strdup(result_file_cstr.c_str());
   }
 
+  data->modelData->resourcesDir = NULL;
+
   string init_initMethod = "";
   string init_file = "";
   string init_time_string = "";
@@ -557,11 +565,10 @@ int startNonInteractiveSimulation(int argc, char**argv, DATA* data, threadData_t
     init_initMethod = omc_flagValue[FLAG_IIM];
   }
   if(omc_flag[FLAG_IIF]) {
-    omc_stat_t attrib;
     if (omc_flag[FLAG_INPUT_PATH]) {
       const char *tmp_filename;
 
-      if (omc_stat(omc_flagValue[FLAG_IIF], &attrib ) == 0) {
+      if (omc_file_exists(omc_flagValue[FLAG_IIF])) {
         if (0 > GC_asprintf(&tmp_filename, "%s", omc_flagValue[FLAG_IIF] )) {
           throwStreamPrint(NULL, "simulation_runtime.cpp: Error: can not allocate memory.");
         }
@@ -576,7 +583,7 @@ int startNonInteractiveSimulation(int argc, char**argv, DATA* data, threadData_t
     else {
       init_file = omc_flagValue[FLAG_IIF];
     }
-    if (omc_stat(init_file.c_str(), &attrib ) != 0) {
+    if (!omc_file_exists(init_file.c_str())) {
       throwStreamPrint(NULL, "Initialization file \"%s\" doesn't exist.", init_file.c_str());
     }
   }
@@ -634,8 +641,16 @@ int startNonInteractiveSimulation(int argc, char**argv, DATA* data, threadData_t
   {
     infoStreamPrint(LOG_STDOUT, 0, "Reconcile Boundary Conditions Starting!");
     infoStreamPrint(LOG_STDOUT, 0, "%s", data->modelData->modelName);
-    retVal = reconcileBoundaryConditions(data, threadData, retVal);
+    retVal = boundaryConditions(data, threadData, retVal);
     infoStreamPrint(LOG_STDOUT, 0, "Reconcile Boundary Conditions Completed!");
+  }
+
+  if (omc_flag[FLAG_DATA_RECONCILE_STATE])
+  {
+    infoStreamPrint(LOG_STDOUT, 0, "Reconcile State Estimation Starting!");
+    infoStreamPrint(LOG_STDOUT, 0, "%s", data->modelData->modelName);
+    retVal = dataReconciliation(data, threadData, retVal);
+    infoStreamPrint(LOG_STDOUT, 0, "Reconcile State Estimation Completed!");
   }
 
   if(0 == retVal && create_linearmodel) {
@@ -955,7 +970,14 @@ int initRuntimeAndSimulation(int argc, char**argv, DATA *data, threadData_t *thr
   }
 
   setGlobalVerboseLevel(argc, argv);
-  setGlobalLoggingTime(argc, argv, data->simulationInfo);
+  setGlobalLoggingTime(data->simulationInfo);
+  if(omc_flag[FLAG_LV_MAX_WARN]) {
+    data->simulationInfo->maxWarnDisplays = atoi(omc_flagValue[FLAG_LV_MAX_WARN]);
+    infoStreamPrint(LOG_STDOUT, 0, "Display limit for repeating warnings changed to %u.", data->simulationInfo->maxWarnDisplays);
+  } else {
+    data->simulationInfo->maxWarnDisplays = DEFAULT_FLAG_LV_MAX_WARN;
+  }
+
   initializeDataStruc(data, threadData);
   if(!data)
   {
@@ -1158,6 +1180,28 @@ void communicateMsg(char id, unsigned int size, const char *data)
 #endif
 }
 
+/**
+ * @brief Parses the commandline (program options) and sets some
+ * values. See initRuntimeAndSimulation for more info.
+ * This allows generated simulation code to check-on/read options and flags before
+ * it calls the main _main_SimulationRuntime function to do the simulation.
+ *
+ * @param argc
+ * @param argv  This gets overwritten on Windows!!
+ * @param data
+ * @param threadData
+ * @return int    Returns 0 on success. Returns 1 otherwise.
+ *
+ * Note: The function will overwrite argv to its wide character representation. Not sure
+ * if this is a good idea. However, I am leaving it as it was for now.
+ */
+int _main_initRuntimeAndSimulation(int argc, char**argv, DATA *data, threadData_t *threadData) {
+
+  if (initRuntimeAndSimulation(argc, argv, data, threadData)) //initRuntimeAndSimulation returns 1 if an error occurs
+    return 1;
+
+  return 0;
+}
 
 /* \brief main function for simulator
  *
@@ -1170,22 +1214,8 @@ void communicateMsg(char id, unsigned int size, const char *data)
 
 int _main_SimulationRuntime(int argc, char**argv, DATA *data, threadData_t *threadData)
 {
-#if defined(__MINGW32__) || defined(_MSC_VER)
-  /* Support for non-ASCII characters
-   * Read the unicode command line arguments and replace the normal arguments with it.
-   */
-  wchar_t** wargv = CommandLineToArgvW(GetCommandLineW(), &argc);
-  for (int i = 0; i < argc; i++) {
-    char* buf = omc_wchar_to_multibyte_str(wargv[i]);
-    strcpy(argv[i], buf);
-    free(buf);
-  }
-#endif
-
   int retVal = -1;
   MMC_TRY_INTERNAL(globalJumpBuffer)
-  if (initRuntimeAndSimulation(argc, argv, data, threadData)) //initRuntimeAndSimulation returns 1 if an error occurs
-    return 1;
 
   /* sighandler_t oldhandler = different type on all platforms... */
 #ifdef SIGUSR1
@@ -1263,7 +1293,7 @@ static inline void sendXMLTCPIfClosed()
   }
 }
 
-static void messageXMLTCP(int type, int stream, int indentNext, char *msg, int subline, const int *indexes)
+static void messageXMLTCP(int type, int stream, FILE_INFO info, int indentNext, char *msg, int subline, const int *indexes)
 {
   numOpenTags++;
   xmlTcpStream << "<message stream=\"" << LOG_STREAM_NAME[stream] << "\" type=\"" << LOG_TYPE_DESC[type] << "\" text=\"";
@@ -1320,7 +1350,7 @@ static void printEscapedXML(const char *msg)
   }
 }
 
-static void messageXML(int type, int stream, int indentNext, char *msg, int subline, const int *indexes)
+static void messageXML(int type, int stream, FILE_INFO info, int indentNext, char *msg, int subline, const int *indexes)
 {
   printf("<message stream=\"%s\" type=\"%s\" text=\"", LOG_STREAM_NAME[stream], LOG_TYPE_DESC[type]);
   printEscapedXML(msg);

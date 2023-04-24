@@ -104,6 +104,12 @@ public:
   void setUpMainWindow(threadData_t *threadData);
   bool isDebug() const {return mDebug;}
   void setDebug(bool debug) {mDebug = debug;}
+  bool isNewApi() const {return mNewApi;}
+  void setNewApi(bool newApi) {mNewApi = newApi;}
+  bool isNewApiCommandLine() const {return mNewApiCommandLine;}
+  void setNewApiCommandLine(bool newApiCommandLine) {mNewApiCommandLine = newApiCommandLine;}
+  bool isNewApiProfiling() const {return mNewApiProfiling;}
+  void setNewApiProfiling(bool newApiProfiling);
   bool isTestsuiteRunning() const {return mTestsuiteRunning;}
   void setTestsuiteRunning(bool testsuiteRunning) {mTestsuiteRunning = testsuiteRunning;}
   OMCProxy* getOMCProxy() {return mpOMCProxy;}
@@ -146,6 +152,7 @@ public:
   bool isPlottingPerspectiveActive();
   bool isDebuggingPerspectiveActive();
   QTimer* getAutoSaveTimer() {return mpAutoSaveTimer;}
+  QAction* getUnloadAllAction() {return mpUnloadAllAction;}
   QAction* getSaveAction() {return mpSaveAction;}
   QAction* getSaveAsAction() {return mpSaveAsAction;}
   QAction* getSaveTotalAction() {return mpSaveTotalAction;}
@@ -254,11 +261,16 @@ public:
   static void LoadModelCallbackFunction(void *p, const char* modelName);
   void addSystemLibraries();
   QString getLibraryIndexFilePath() const;
+  void writeNewApiProfiling(const QString &str);
 
   QList<QString> mFMUDirectoriesList;
   QList<QString> mMOLDirectoriesList;
 private:
   bool mDebug;
+  bool mNewApi;
+  bool mNewApiCommandLine;
+  bool mNewApiProfiling;
+  FILE *mpNewApiProfilingFile = nullptr;
   bool mTestsuiteRunning;
   OMCProxy *mpOMCProxy;
   bool mExitApplicationStatus;
@@ -315,6 +327,7 @@ private:
   QAction *mpLoadEncryptedLibraryAction;
   QAction *mpOpenResultFileAction;
   QAction *mpOpenTransformationFileAction;
+  QAction *mpUnloadAllAction;
   // CompositeModel File Actions
   QAction *mpNewCompositeModelFileAction;
   QAction *mpOpenCompositeModelFileAction;
@@ -482,6 +495,7 @@ public slots:
   void loadEncryptedLibrary();
   void showOpenResultFileDialog();
   void showOpenTransformationFileDialog();
+  void unloadAll(bool onlyModelicaClasses = false);
   void createNewCompositeModelFile();
   void openCompositeModelFile();
   void loadExternalModels();

@@ -232,7 +232,6 @@ set(OMC_MM_BACKEND_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/BackEnd/Matching.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/BackEnd/MathematicaDump.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/BackEnd/OnRelaxation.mo
-    ${CMAKE_CURRENT_SOURCE_DIR}/BackEnd/OpenTURNS.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/BackEnd/RemoveSimpleEquations.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/BackEnd/ResolveLoops.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/BackEnd/Sorting.mo
@@ -300,6 +299,7 @@ set(OMC_MM_BACKEND_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Modules/3_Post/NBJacobian.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Modules/3_Post/NBSolve.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Modules/3_Post/NBTearing.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Modules/3_Post/NBEvaluation.mo
     # "NBackend Util";
     ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Util/NBBackendUtil.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Util/NBDifferentiate.mo
@@ -387,6 +387,7 @@ set(OMC_MM_BACKEND_SOURCES
     # "NSimCode";
     ${CMAKE_CURRENT_SOURCE_DIR}/NSimCode/NSimCode.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NSimCode/NSimCodeUtil.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NSimCode/NSimGenericCall.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NSimCode/NSimJacobian.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NSimCode/NSimStrongComponent.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NSimCode/NSimVar.mo
@@ -415,6 +416,7 @@ set(OMC_MM_BACKEND_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/SimCode/HpcOmSimCodeMain.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/SimCode/SerializeInitXML.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/SimCode/SerializeModelInfo.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/SimCode/SerializeSparsityPattern.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/SimCode/SerializeTaskSystemInfo.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/SimCode/SimCode.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/SimCode/SimCodeMain.mo

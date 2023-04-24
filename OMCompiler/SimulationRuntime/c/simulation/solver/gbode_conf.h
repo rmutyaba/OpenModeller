@@ -41,41 +41,22 @@ extern "C" {
 #endif
 
 /**
- * @brief Step size controller method
+ * @brief Extrapolation method for single-rate / multi-rate error estimation.
  */
-enum GB_CTRL_METHOD {
-  GB_CTRL_UNKNOWN = 0,  /* Unknown controller */
-  GB_CTRL_I = 1,        /* I controller */
-  GB_CTRL_PI = 2,       /* PI controller */
-  GB_CTRL_CNST = 3,     /* Constant step size */
+enum GB_EXTRAPOL_METHOD{
+  GB_EXT_UNKNOWN = 0,    /* Unknown method */
 
-  GB_CTRL_MAX
+  GB_EXT_DEFAULT,        /* Default, depending on the Runge-Kutta method */
+  GB_EXT_RICHARDSON,     /* Richardson extrapolation*/
+  GB_EXT_EMBEDDED        /* Embedded scheme */
 };
-
-extern const char *GB_CTRL_METHOD_NAME[GB_CTRL_MAX];
-extern const char *GB_CTRL_METHOD_DESC[GB_CTRL_MAX];
-
-enum GB_INTERPOL_METHOD {
-  GB_INTERPOL_UNKNOWN = 0,          /* Unknown interpolation method */
-  GB_INTERPOL_LIN = 1,              /* Linear interpolation */
-  GB_INTERPOL_HERMITE = 2,          /* Hermite interpolation */
-  GB_INTERPOL_HERMITE_b = 3,        /* Hermite interpolation (only for left hand side)*/
-  GB_INTERPOL_HERMITE_ERRCTRL = 4,  /* Hermite interpolation with error control */
-  GB_DENSE_OUTPUT = 5,              /* Dense output, if available else hermite */
-  GB_DENSE_OUTPUT_ERRCTRL = 6,       /* Dense output, if available else hermite with error control */
-
-
-  GB_INTERPOL_MAX
-};
-
-extern const char *GB_INTERPOL_METHOD_NAME[GB_INTERPOL_MAX];
-extern const char *GB_INTERPOL_METHOD_DESC[GB_INTERPOL_MAX];
 
 enum GB_METHOD getGB_method(enum _FLAG flag);
-enum GB_NLS_METHOD getGB_NLS_method(enum _FLAG flag);
-enum GB_CTRL_METHOD getControllerMethod();
 enum GB_INTERPOL_METHOD getInterpolationMethod(enum _FLAG flag);
+enum GB_CTRL_METHOD getControllerMethod(enum _FLAG flag);
+enum GB_NLS_METHOD getGB_NLS_method(enum _FLAG flag);
 double getGBRatio();
+enum GB_EXTRAPOL_METHOD getGBErr(enum _FLAG flag);
 
 #ifdef __cplusplus
 };

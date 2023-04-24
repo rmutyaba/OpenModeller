@@ -113,19 +113,9 @@ void *getRingData(RINGBUFFER *rb, int i)
  */
 void expandRingBuffer(RINGBUFFER *rb)
 {
-  int i;
-
-  void *tmp = calloc(2*rb->bufferSize, rb->itemSize);
-  assertStreamPrint(NULL, 0!=tmp, "out of memory");
-
-  for(i=0; i<rb->nElements; i++) {
-    memcpy(((char*)tmp)+(i*rb->itemSize), getRingData(rb, i), rb->itemSize);
-  }
-
-  free(rb->buffer);
-  rb->buffer = tmp;
   rb->bufferSize *= 2;
-  rb->firstElement = 0;
+  rb->buffer = realloc(rb->buffer, rb->bufferSize*rb->itemSize);
+  assertStreamPrint(NULL, 0 != rb->buffer, "out of memory");
 }
 
 /**
@@ -196,15 +186,10 @@ int ringBufferLength(RINGBUFFER *rb)
 /**
  * @brief Rotate start point of ring buffer by n elements.
  *
- * Copy all buffer elements into lookup, if provided.
- *
  * @param rb        Pointer to ring buffer.
  * @param n         Number of items to rotate.
- * @param lookup    Pointer to array of buffer element type and of length buffer->nElements.
- *                  Ring data will be written into lookup.
- *                  Can be NULL.
  */
-void rotateRingBuffer(RINGBUFFER *rb, int n, void **lookup)
+void rotateRingBuffer(RINGBUFFER *rb, int n)
 {
   TRACE_PUSH
 
@@ -214,55 +199,65 @@ void rotateRingBuffer(RINGBUFFER *rb, int n, void **lookup)
 
   rb->firstElement = (rb->firstElement+(n*(rb->bufferSize-1)))%rb->bufferSize;
 
-  if(lookup)
-  {
-    for(long i=0; i<rb->nElements; ++i){
-      lookup[i] = getRingData(rb, i);
-    }
+  TRACE_POP
+}
+
+/**
+ * @brief Copy addresses of all buffer elements in order.
+ *
+ * @param rb        Pointer to ring buffer.
+ * @param lookup    Pointer to array of buffer element pointer type and of length buffer->nElements.
+ *                  Ring data addresses will be written into lookup.
+ */
+void lookupRingBuffer(RINGBUFFER *rb, void **lookup)
+{
+  TRACE_PUSH
+
+  assertStreamPrint(NULL, rb->nElements > 0, "empty RingBuffer");
+  assertStreamPrint(NULL, lookup, "Target buffer is NULL");
+
+  for (int i = 0; i < rb->nElements; i++) {
+    lookup[i] = ((char*)rb->buffer) + (((rb->firstElement+i)%rb->bufferSize)*rb->itemSize);
   }
 
   TRACE_POP
 }
 
 /**
- * @brief Dumps information about ring buffer to LOG_UTIL.
+ * @brief Dumps information about ring buffer to stream.
  *
  * @param rb    Pointer to ring buffer.
  */
-void infoRingBuffer(RINGBUFFER *rb)
+void infoRingBuffer(RINGBUFFER *rb, int stream)
 {
-  if (ACTIVE_STREAM(LOG_UTIL)) {
-    infoStreamPrint(LOG_UTIL, 1, "RingBuffer-Info");
-    infoStreamPrint(LOG_UTIL, 0, "itemSize: %d [size of one item in bytes]", rb->itemSize);
-    infoStreamPrint(LOG_UTIL, 0, "firstElement: %d [position of first element in buffer]", rb->firstElement);
-    infoStreamPrint(LOG_UTIL, 0, "nElements: %d [number of elements in buffer]", rb->nElements);
-    infoStreamPrint(LOG_UTIL, 0, "bufferSize: %d [number of elements which could be stored in buffer]", rb->bufferSize);
-    messageClose(LOG_UTIL);
-  }
-}
-
-/**
- * @brief Print a ringbuffer with provided print function.
- *
- * @param rb                Ringbuffer to print.
- * @param stream            Stream of type LOG_STREAM.
- * @param printDataFunc     Function to print address of buffer element and its data to stream.
- */
-void plotRingBuffer(RINGBUFFER *rb, int stream, void (*printDataFunc)(void*,int,void*)) {
-  int pos = 0;
-  void* bufferElemData;
-
-  if (useStream[stream]) {
-    infoStreamPrint(stream, 1, "Printing ring buffer:");
+  if (ACTIVE_STREAM(stream)) {
+    infoStreamPrint(stream, 1, "RingBuffer-Info");
     infoStreamPrint(stream, 0, "itemSize: %d [size of one item in bytes]", rb->itemSize);
     infoStreamPrint(stream, 0, "firstElement: %d [position of first element in buffer]", rb->firstElement);
     infoStreamPrint(stream, 0, "nElements: %d [number of elements in buffer]", rb->nElements);
     infoStreamPrint(stream, 0, "bufferSize: %d [number of elements which could be stored in buffer]", rb->bufferSize);
+    messageClose(stream);
+  }
+}
 
-    while(pos < rb->nElements) {
-      bufferElemData = getRingData(rb, pos);
+/**
+ * @brief Print a ring buffer with provided print function.
+ *
+ * @param rb                Ring buffer to print.
+ * @param stream            Stream of type LOG_STREAM.
+ * @param printDataFunc     Function to print address of buffer element and its data to stream.
+ */
+void printRingBuffer(RINGBUFFER *rb, int stream, void (*printDataFunc)(void*,int,void*)) {
+  int i;
+  void* bufferElemData;
+
+  if (useStream[stream]) {
+    infoStreamPrint(stream, 1, "Printing ring buffer:");
+    infoRingBuffer(rb, stream);
+
+    for(i = 0; i < rb->nElements; ++i) {
+      bufferElemData = getRingData(rb, i);
       printDataFunc(bufferElemData, stream, (void*) bufferElemData);
-      pos++;
     }
 
     messageClose(stream);

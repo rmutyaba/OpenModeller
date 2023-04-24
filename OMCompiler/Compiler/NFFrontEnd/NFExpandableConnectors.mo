@@ -88,6 +88,7 @@ algorithm
   csets := ConnectionSets.emptySets(listLength(expandable_conns) + listLength(undeclared_conns));
   csets := addExpandableConnectorsToSets(expandable_conns, csets);
   (undeclared_conns, csets) := List.mapFold(undeclared_conns, addUndeclaredConnectorToSets, csets);
+
   // Extract the sets of connected connectors.
   csets_array := ConnectionSets.extractSets(csets);
 
@@ -360,7 +361,6 @@ protected
   ClassTree cls_tree;
   Component comp;
   list<InstNode> nodes = {};
-  Variable var;
   Type ty;
   ComplexType complex_ty;
 algorithm
@@ -396,12 +396,7 @@ algorithm
       nodes := node :: nodes;
       ty := c.ty;
       elem_name := ComponentRef.prefixCref(node, ty, {}, exp_name);
-      // TODO: This needs more work, the new connector might be a complex connector.
-      var := Variable.VARIABLE(elem_name, ty, NFBinding.EMPTY_BINDING,
-        Visibility.PUBLIC, NFAttributes.DEFAULT_ATTR, {}, {},
-        SOME(SCode.COMMENT(NONE(), SOME("virtual variable in expandable connector"))),
-        ElementSource.getInfo(c.source), NFBackendExtension.DUMMY_BACKEND_INFO);
-      vars := var :: vars;
+      vars := createVirtualVariables(elem_name, ty, ElementSource.getInfo(c.source), vars);
     else
       comp_node := InstNode.resolveInner(comp_node);
 
@@ -423,10 +418,37 @@ algorithm
   // Create a normal non-expandable complex type for the augmented expandable connector.
   complex_ty := Typing.makeConnectorType(cls_tree, isExpandable = false);
   ty := Type.COMPLEX(cls_node, complex_ty);
+  ty := Type.liftArrayLeftList(ty, Type.arrayDims(InstNode.getType(exp_node)));
   cls := Class.setType(ty, cls);
   InstNode.updateClass(cls, cls_node);
   InstNode.componentApply(exp_node, Component.setType, ty);
 end augmentExpandableConnector;
+
+function createVirtualVariables
+  input ComponentRef connectorName;
+  input Type connectorType;
+  input SourceInfo info;
+  input output list<Variable> vars;
+protected
+  Variable var;
+  array<InstNode> comps;
+  ComponentRef name;
+  Type ty;
+algorithm
+  if Type.isComplex(connectorType) then
+    for comp in Type.complexComponents(connectorType) loop
+      ty := InstNode.getType(comp);
+      name := ComponentRef.prefixCref(comp, ty, {}, connectorName);
+      vars := createVirtualVariables(name, ty, info, vars);
+    end for;
+  else
+    var := Variable.VARIABLE(connectorName, connectorType, NFBinding.EMPTY_BINDING,
+      Visibility.PUBLIC, NFAttributes.DEFAULT_ATTR, {}, {},
+      SOME(SCode.COMMENT(NONE(), SOME("virtual variable in expandable connector"))),
+      info, NFBackendExtension.DUMMY_BACKEND_INFO);
+    vars := var :: vars;
+  end if;
+end createVirtualVariables;
 
 function updateUndeclaredConnection
   input Connection conn;
@@ -483,10 +505,9 @@ end updatePotentiallyPresentVariable;
 
 function hashConnector
   input Connector conn;
-  input Integer mod;
   output Integer res;
 algorithm
-  res := stringHashDjb2Mod(ComponentRef.firstName(conn.name), mod);
+  res := stringHashDjb2(ComponentRef.firstName(conn.name));
 end hashConnector;
 
 annotation(__OpenModelica_Interface="frontend");

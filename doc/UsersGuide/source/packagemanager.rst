@@ -27,8 +27,8 @@ can find them.
 
 The default place where OpenModelica looks for packages is the so-called
 `MODELICAPATH <https://specification.modelica.org/maint/3.5/packages.html#the-modelica-library-path-modelicapath>`_.
-You can check where it is by typing ``getModelicaPath()`` in the Interactive Environment. Installed
-read-only libraries are placed by default in the MODELICAPATH.
+You can check where it is by typing ``getModelicaPath()`` in the Interactive Environment (Tools | OpenModelica Compiler CLI in OMEdit).
+Installed read-only libraries are placed by default in the MODELICAPATH.
 
 When a new version of certain package comes out, `conversion annotations
 <https://specification.modelica.org/maint/3.5/annotations.html#version-handling>`_ in it declare whether your models using
@@ -58,7 +58,7 @@ The Package Manager
 
 The Open Source Modelica Consortium (OSMC) maintains a collection of publicly available, open-source Modelica libraries
 on its servers, see https://github.com/OpenModelica/OMPackageManager. These libraries are routinely tested with past
-released versions of OpenModelica, as well as with the current development version on the master branch, see 
+released versions of OpenModelica, as well as with the current development version on the master branch, see
 the `overview report <https://libraries.openmodelica.org/branches/overview-combined.html>`_.
 Based on the testing results and on information gathered from the library developers, these packages are classified
 in terms of level of support in OpenModelica. Backwards-compatibility information is also collected from the
@@ -85,6 +85,15 @@ number and priority is installed.
 
 In any case, semver version semantics is only used to order the releases, while backwards-compatibility
 is determined exclusively on the basis of ``noneFromVersion`` annotations.
+
+When installing OpenModelica, a cached version of the latest versions of the Modelica Standard Library is included in the
+installation files. As soon as a user starts any OpenModelica tool (e.g., OMEdit, OMNotebook, OMShell, or direct command-line
+invocation of omc), if the user's ``.openmodelica`` directory is empty the Modelica Standard Library will be installed
+automatically using this cached version. This happens when using OpenModelica for the first time, or if the contents of the
+``.openmodelica`` directory have been deleted to get rid of all installed libraries. This automatic installation needs no
+Internet connection, so it also works behind firewalls or in set-ups with limited available bandwidth. Therefore, the Modelica
+Standard Library is immediately available without the need of using the package manager explicitly. It is then possible
+to install and manage other libraries using the package manager, as explained previously.
 
 Package Management in OMEdit
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -113,7 +122,7 @@ In this case you have two options:
 - Unload all and Reload XYZ: in this case, all previously loaded libraries, that may generate conflicts, are unloaded first;
   then XYZ is loaded, and finally the right versions of the libraries XYZ uses, as declared in its ``uses`` annotation,
   will be loaded automatically.
-  
+
 If you are normally working with only one version of the Modelica standard library, you can set it to be automatically loaded
 from the Tools|Options|Libraries menu; in case you need to work with a library that uses a previous, non-backwards compatible
 version, the Unload all and Reload option comes handy. Otherwise, you can avoid loading the Modelica library automatically

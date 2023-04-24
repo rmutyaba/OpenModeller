@@ -31,7 +31,11 @@
 
 #include "Vector.h"
 
-#include <cmath>
+VectorQuantity& operator++(VectorQuantity& quantity)
+{
+  quantity = static_cast<VectorQuantity>(static_cast<int>(quantity) + 1);
+  return quantity;
+}
 
 std::ostream& operator<<(std::ostream& os, const VectorQuantity quantity)
 {
@@ -57,7 +61,11 @@ std::ostream& operator<<(std::ostream& os, const VectorQuantity quantity)
 }
 
 VectorObject::VectorObject()
-    : AbstractVisualizerObject(VisualizerType::vector),
+    : AbstractVisualizerObjectWithVisualProperties(VisualizerType::vector),
+      mScaleLength(1.0),
+      mScaleRadius(1.0),
+      mScaleTransf(1.0),
+      mAutoScaleCancellationRequired(false),
       _quantity(VisualizerAttribute(0.0)),
       _headAtOrigin(VisualizerAttribute(0.0)),
       _twoHeadedArrow(VisualizerAttribute(0.0))
@@ -67,29 +75,11 @@ VectorObject::VectorObject()
   _coords[2] = VisualizerAttribute(0.0);
 }
 
-void VectorObject::dumpVisualizerAttributes() const
+void VectorObject::dumpVisualizerAttributes()
 {
-  AbstractVisualizerObject::dumpVisualizerAttributes();
+  AbstractVisualizerObjectWithVisualProperties::dumpVisualizerAttributes();
   std::cout << "coords " << _coords[0].getValueString() << " , " << _coords[1].getValueString() << " , " << _coords[2].getValueString() << std::endl;
   std::cout << "quantity " << _quantity.getValueString() << " = " << getQuantity() << std::endl;
   std::cout << "headAtOrigin " << _headAtOrigin.getValueString() << " = " << (hasHeadAtOrigin() ? "true" : "false") << std::endl;
   std::cout << "twoHeadedArrow " << _twoHeadedArrow.getValueString() << " = " << (isTwoHeadedArrow() ? "true" : "false") << std::endl;
-}
-
-float VectorObject::getScale() const
-{
-  switch (getQuantity())
-  {
-    case VectorQuantity::force:
-      return kScaleForce;
-    case VectorQuantity::torque:
-      return kScaleTorque;
-    default:
-      return 1;
-  }
-}
-
-float VectorObject::getLength() const
-{
-  return std::sqrt(std::pow(_coords[0].exp, 2) + std::pow(_coords[1].exp, 2) + std::pow(_coords[2].exp, 2)) / getScale();
 }

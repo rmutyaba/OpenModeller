@@ -252,6 +252,7 @@ package SimCodeVar
       list<SimVar> sensitivityVars;
       list<SimVar> dataReconSetcVars;
       list<SimVar> dataReconinputVars;
+      list<SimVar> dataReconSetBVars;
     end SIMVARS;
   end SimVars;
 
@@ -370,6 +371,7 @@ package SimCode
   type ExtAlias = tuple<DAE.ComponentRef, DAE.ComponentRef>;
 
   type SparsityPattern = list<tuple<Integer, list<Integer>>>;
+  type NonlinearPattern = SparsityPattern;
 
   uniontype JacobianColumn
     record JAC_COLUMN
@@ -387,10 +389,13 @@ package SimCode
       String matrixName;
       SparsityPattern sparsity;
       SparsityPattern sparsityT;
+      NonlinearPattern nonlinear;
+      NonlinearPattern nonlinearT;
       list<list<Integer>> coloredCols;
       Integer maxColorCols;
       Integer jacobianIndex;
       Integer partitionIndex;
+      list<SimGenericCall> generic_loop_calls;
       Option<HashTableCrefSimVar.HashTable> crefsHT;
     end JAC_MATRIX;
   end JacobianMatrix;
@@ -401,6 +406,7 @@ package SimCode
       list<DAE.Exp> literals;
       list<SimCodeFunction.RecordDeclaration> recordDecls;
       list<String> externalFunctionIncludes;
+      list<SimGenericCall> generic_loop_calls;
       list<SimEqSystem> localKnownVars;
       list<SimEqSystem> allEquations;
       list<list<SimEqSystem>> odeEquations;
@@ -432,7 +438,7 @@ package SimCode
       SimCodeFunction.MakefileParams makefileParams;
       DelayedExpression delayedExps;
       SpatialDistributionInfo spatialInfo;
-      list<JacobianMatrix> jacobianMatrixes;
+      list<JacobianMatrix> jacobianMatrices;
       Option<SimulationSettings> simulationSettingsOpt;
       String fileNamePrefix;
       String fullPathPrefix; // Used for FMI where code is not generated in the same directory
@@ -545,10 +551,30 @@ package SimCode
   uniontype SimEqSystem
     record SES_RESIDUAL
       Integer index;
+      Integer res_index;
       DAE.Exp exp;
       DAE.ElementSource source;
       BackendDAE.EquationAttributes eqAttr;
     end SES_RESIDUAL;
+
+    record SES_FOR_RESIDUAL
+      Integer index;
+      Integer res_index;
+      list<tuple<DAE.ComponentRef, DAE.Exp>> iterators;
+      DAE.Exp exp;
+      DAE.ElementSource source;
+      BackendDAE.EquationAttributes eqAttr;
+    end SES_FOR_RESIDUAL;
+
+    record SES_GENERIC_RESIDUAL
+      Integer index;
+      Integer res_index;
+      list<Integer> scal_indices;
+      list<tuple<DAE.ComponentRef, DAE.Exp>> iterators;
+      DAE.Exp exp;
+      DAE.ElementSource source;
+      BackendDAE.EquationAttributes eqAttr;
+    end SES_GENERIC_RESIDUAL;
 
     record SES_SIMPLE_ASSIGN
       Integer index;
@@ -574,6 +600,24 @@ package SimCode
       DAE.ElementSource source;
       BackendDAE.EquationAttributes eqAttr;
     end SES_ARRAY_CALL_ASSIGN;
+
+    record SES_GENERIC_ASSIGN
+      "a generic assignment calling a for loop body function with an index list."
+      Integer index;
+      Integer call_index;
+      list<Integer> scal_indices;
+      DAE.ElementSource source;
+      BackendDAE.EquationAttributes eqAttr;
+    end SES_GENERIC_ASSIGN;
+
+    record SES_ENTWINED_ASSIGN
+      "entwined generic assignments calling for loop body functions with an index list and a call order."
+      Integer index;
+      list<Integer> call_order;
+      list<SimEqSystem> single_calls;
+      DAE.ElementSource source;
+      BackendDAE.EquationAttributes eqAttr;
+    end SES_ENTWINED_ASSIGN;
 
     record SES_IFEQUATION
       Integer index;
@@ -798,8 +842,43 @@ package SimCode
       Integer numSetcVars;
       Integer numDataReconVars;
       Integer numRealInputVars "for fmi cs to interpolate inputs";
+      Integer numSetbVars "for data reconciliation setB vars";
+      Integer numRelatedBoundaryConditions "for data reconciliation count number of boundary conditions which failed the extraction algorithm";
     end VARINFO;
   end VarInfo;
+
+  uniontype SimGenericCall
+    record SINGLE_GENERIC_CALL
+      Integer index;
+      list<BackendDAE.SimIterator> iters;
+      DAE.Exp lhs;
+      DAE.Exp rhs;
+    end SINGLE_GENERIC_CALL;
+
+    record IF_GENERIC_CALL
+      Integer index;
+      list<BackendDAE.SimIterator> iters;
+      list<SimBranch> branches;
+    end IF_GENERIC_CALL;
+
+    record WHEN_GENERIC_CALL
+      Integer index;
+      list<BackendDAE.SimIterator> iters;
+      list<SimBranch> branches;
+    end WHEN_GENERIC_CALL;
+  end SimGenericCall;
+
+  uniontype SimBranch
+    record SIM_BRANCH
+      Option<DAE.Exp> condition;
+      list<tuple<DAE.Exp, DAE.Exp>> body;
+    end SIM_BRANCH;
+
+    record SIM_BRANCH_STMT
+      Option<DAE.Exp> condition;
+      list<DAE.Statement> body;
+    end SIM_BRANCH_STMT;
+  end SimBranch;
 
   uniontype DaeModeConfig
     record ALL_EQUATIONS end ALL_EQUATIONS;
@@ -984,6 +1063,7 @@ package SimCodeFunction
       Option<String> aliasName;
       Absyn.Path defPath;
       list<Variable> variables;
+      Boolean usedExternally;
     end RECORD_DECL_FULL;
     record RECORD_DECL_ADD_CONSTRCTOR
       String ctor_name;
@@ -1113,7 +1193,7 @@ package SimCodeUtil
 
   function getFMIModelStructure
     input SimCode.SimCode simCode;
-    input list<SimCode.JacobianMatrix> jacobianMatrixes;
+    input list<SimCode.JacobianMatrix> jacobianMatrices;
     output SimCode.FmiModelStructure outFmiModelStructure;
   end getFMIModelStructure;
 
@@ -1344,6 +1424,10 @@ package SimCodeUtil
     output Boolean b ;
   end jacobianColumnsAreEmpty;
 
+  function getSimIteratorSize
+    input list<BackendDAE.SimIterator> iters;
+    output Integer size ;
+  end getSimIteratorSize;
 end SimCodeUtil;
 
 package SimCodeFunctionUtil
@@ -1557,11 +1641,21 @@ package BackendDAE
 
   uniontype ZeroCrossing
     record ZERO_CROSSING
-      DAE.Exp relation_;
-      list<Integer> occurEquLst;
-      list<Integer> occurWhenLst;
+      Integer index                           "zero crossing index";
+      DAE.Exp relation_                       "function";
+      list<Integer> occurEquLst               "list of equations where the function occurs";
+      Option<list<SimIterator>> iter  "optional iterator for for-loops";
     end ZERO_CROSSING;
   end ZeroCrossing;
+
+  uniontype SimIterator
+    record SIM_ITERATOR
+      DAE.ComponentRef name;
+      Integer start;
+      Integer step;
+      Integer size;
+    end SIM_ITERATOR;
+  end SimIterator;
 
   uniontype TimeEvent
     record SIMPLE_TIME_EVENT "e.g. time > 0.5"
@@ -3765,21 +3859,6 @@ package Expression
     output Boolean outBoolean;
   end isPositiveOrZero;
 
-  function extractUniqueCrefsFromExp
-    input DAE.Exp inExp;
-    output list<DAE.ComponentRef> ocrefs;
-  end extractUniqueCrefsFromExp;
-
-  function extractUniqueCrefsFromExpDerPreStart
-    input DAE.Exp inExp;
-    output list<DAE.ComponentRef> ocrefs;
-  end extractUniqueCrefsFromExpDerPreStart;
-
-  function extractUniqueCrefsFromStatmentS
-    input list<DAE.Statement> inStmts;
-    output tuple<list<DAE.ComponentRef>,list<DAE.ComponentRef>> ocrefs;
-  end extractUniqueCrefsFromStatmentS;
-
   function isCrefListWithEqualIdents
     input list<DAE.Exp> iExpressions;
     output Boolean oCrefWithEqualIdents;
@@ -3950,7 +4029,7 @@ package Flags
   constant ConfigFlag REDUCE_TERMS;
   constant ConfigFlag LABELED_REDUCTION;
   constant ConfigFlag LOAD_MSL_MODEL;
-  constant ConfigFlag Load_PACKAGE_FILE;
+  constant ConfigFlag LOAD_PACKAGE_FILE;
   constant ConfigFlag SINGLE_INSTANCE_AGLSOLVER;
   constant ConfigFlag LINEARIZATION_DUMP_LANGUAGE;
   constant ConfigFlag USE_ZEROMQ_IN_SIM;
@@ -3961,6 +4040,7 @@ package Flags
   constant ConfigFlag ZEROMQ_CLIENT_ID;
   constant ConfigFlag FMI_FILTER;
   constant ConfigFlag EXPORT_CLOCKS_IN_MODELDESCRIPTION;
+  constant ConfigFlag OBFUSCATE;
 
   function isSet
     input DebugFlag inFlag;

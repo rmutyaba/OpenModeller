@@ -169,7 +169,7 @@ public
 
       // create adjacency matrix and match with transposed matrix to respect variable priority
       set_adj := Adjacency.Matrix.create(candidate_ptrs, constraint_ptrs, matrixType, NBAdjacency.MatrixStrictness.LINEAR);
-      set_matching := Matching.regular(Matching.EMPTY_MATCHING(), set_adj, true, true);
+      set_matching := Matching.regular(NBMatching.EMPTY_MATCHING, set_adj, true, true);
 
       if debug then
         print(Adjacency.Matrix.toString(set_adj, "Index Reduction"));
@@ -247,6 +247,25 @@ public
       changed := false;
     end if;
   end indexReduction;
+
+  function noIndexReduction
+    "fails if the system has unmatched variables"
+    extends Module.resolveSingularitiesInterface;
+    input Matching matching;
+  protected
+    list<Slice<VariablePointer>> unmatched_vars;
+    list<Slice<EquationPointer>> unmatched_eqns;
+  algorithm
+    (_, unmatched_vars, _, unmatched_eqns) := Matching.getMatches(matching, mapping_opt, variables, equations);
+    if not listEmpty(unmatched_vars) then
+      Error.addMessage(Error.INTERNAL_ERROR,{getInstanceName()
+        + " failed because following variables could not be solved:\n"
+        + List.toString(unmatched_vars, function Slice.toString(func=BVariable.pointerToString, maxLength=0), "", "\t", ", ", "\n", true)
+        + "\n  Furthermore following equations are unmatched:\n"
+        + List.toString(unmatched_eqns, function Slice.toString(func=function Equation.pointerToString(str=""), maxLength=0), "", "\t", ", ", "\n", true)});
+      fail();
+    end if;
+  end noIndexReduction;
 
   function balanceInitialization
     extends Module.resolveSingularitiesInterface;

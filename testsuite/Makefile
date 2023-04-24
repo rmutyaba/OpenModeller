@@ -71,6 +71,7 @@ simulationinlineFunction.log \
 simulationjacobian.log \
 simulationjapaneselanguage.log \
 simualtionlinear_system.log \
+simualtionnewtonDiagnostics.log \
 simulationnonlinear_system.log \
 simulationothers.log \
 simulationpackages.log \
@@ -324,7 +325,7 @@ simulationdaemode.log: omc-diff
 	$(MAKE) -C simulation/modelica/daemode -f Makefile test > $@
 	@echo $@ done
 simulationnewbackend.log: omc-diff
-	$(MAKE) -C simulation/modelica/NBackend -f Makefile test > $@
+	$(MAKE) -C simulation/modelica/NBackend/basics/ -f Makefile test > $@
 	@echo $@ done
 simulationnewbackend-arrayhandling.log: omc-diff
 	$(MAKE) -C simulation/modelica/NBackend/array_handling/ -f Makefile test > $@
@@ -376,6 +377,9 @@ simulationjapaneselanguage.log: omc-diff
 	@echo $@ done
 simualtionlinear_system.log: omc-diff
 	$(MAKE) -C simulation/modelica/linear_system -f Makefile test > $@
+	@echo $@ done
+simualtionnewtonDiagnostics.log: omc-diff
+	$(MAKE) -C simulation/modelica/newtonDiagnostics -f Makefile test > $@
 	@echo $@ done
 simulationnonlinear_system.log: omc-diff
 	$(MAKE) -C simulation/modelica/nonlinear_system -f Makefile test > $@

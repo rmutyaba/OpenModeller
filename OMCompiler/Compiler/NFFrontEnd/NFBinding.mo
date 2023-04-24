@@ -417,6 +417,7 @@ public
   algorithm
     isTyped := match binding
       case TYPED_BINDING() then true;
+      case FLAT_BINDING() then true;
       else false;
     end match;
   end isTyped;
@@ -793,6 +794,18 @@ public
   algorithm
     binding := FLAT_BINDING(exp, var, source);
   end makeFlat;
+
+  function isEvaluated
+    input Binding binding;
+    output Boolean evaluated;
+  algorithm
+    evaluated := match binding
+      case TYPED_BINDING()
+        then Mutable.access(binding.evalState) == EvalState.EVALUATED;
+      case CEVAL_BINDING() then true;
+      else false;
+    end match;
+  end isEvaluated;
 
 annotation(__OpenModelica_Interface="frontend");
 end NFBinding;

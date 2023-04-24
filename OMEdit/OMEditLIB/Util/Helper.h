@@ -104,6 +104,10 @@ public:
   static QString scriptingKind;
   static QString tabbed;
   static QString subWindow;
+  static QString iconViewForSettings;
+  static QString diagramViewForSettings;
+  static QString textViewForSettings;
+  static QString documentationViewForSettings;
   static QString structuredOutput;
   static QString textOutput;
   static QString utf8;
@@ -153,6 +157,7 @@ public:
   static QString error;
   static QString percentageLabel;
   static QString chooseTransparency;
+  static QString chooseSpecularity;
   static QString chooseColor;
   static QString chooseFile;
   static QString chooseFiles;
@@ -505,8 +510,11 @@ public:
     TLMCOSIMULATION_ALREADY_RUNNING,
     TERMINAL_COMMAND_NOT_SET,
     UNABLE_FIND_COMPONENT_IN_CONNECTION,
+    UNABLE_FIND_COMPONENT_IN_CONNECTION_NEW,
     UNABLE_FIND_COMPONENT_IN_TRANSITION,
+    UNABLE_FIND_COMPONENT_IN_TRANSITION_NEW,
     UNABLE_FIND_COMPONENT_IN_INITIALSTATE,
+    UNABLE_FIND_COMPONENT_IN_INITIALSTATE_NEW,
     SELECT_SIMULATION_OPTION,
     INVALID_TRANSITION_CONDITION,
     MULTIPLE_DECLARATIONS_COMPONENT,

@@ -205,7 +205,7 @@ solveUmfPack(DATA *data, threadData_t *threadData, int sysNumber, double* aux_x)
   double tmpJacEvalTime;
   int reuseMatrixJac = (data->simulationInfo->currentContext == CONTEXT_SYM_JACOBIAN && data->simulationInfo->currentJacobianEval > 0);
 
-  infoStreamPrintWithEquationIndexes(LOG_LS, 0, indexes, "Start solving Linear System %d (size %d) at time %g with UMFPACK Solver",
+  infoStreamPrintWithEquationIndexes(LOG_LS, omc_dummyFileInfo, 0, indexes, "Start solving Linear System %d (size %d) at time %g with UMFPACK Solver",
    eqSystemNumber, (int) systemData->size,
    data->localData[0]->timeValue);
 
@@ -312,9 +312,9 @@ solveUmfPack(DATA *data, threadData_t *threadData, int sysNumber, double* aux_x)
       residualNorm = _omc_gen_euclideanVectorNorm(solverData->work, solverData->n_row);
 
       if ((isnan(residualNorm)) || (residualNorm>1e-4)){
-        warningStreamPrint(LOG_LS, 0,
-            "Failed to solve linear system of equations (no. %d) at time %f. Residual norm is %.15g.",
-            (int)systemData->equationIndex, data->localData[0]->timeValue, residualNorm);
+        warningStreamPrintWithLimit(LOG_LS, 0, ++(systemData->numberOfFailures) /* Update counter */, data->simulationInfo->maxWarnDisplays,
+                                    "Failed to solve linear system of equations (no. %d) at time %f. Residual norm is %.15g.",
+                                    (int)systemData->equationIndex, data->localData[0]->timeValue, residualNorm);
         success = 0;
       }
     } else {
@@ -338,9 +338,9 @@ solveUmfPack(DATA *data, threadData_t *threadData, int sysNumber, double* aux_x)
   }
   else
   {
-    warningStreamPrint(LOG_STDOUT, 0,
-      "Failed to solve linear system of equations (no. %d) at time %f, system status %d.",
-        (int)systemData->equationIndex, data->localData[0]->timeValue, status);
+    warningStreamPrintWithLimit(LOG_LS, 0, ++(systemData->numberOfFailures) /* Update counter */, data->simulationInfo->maxWarnDisplays,
+                                "Failed to solve linear system of equations (no. %d) at time %f, system status %d.",
+                                (int)systemData->equationIndex, data->localData[0]->timeValue, status);
   }
   solverData->numberSolving += 1;
 

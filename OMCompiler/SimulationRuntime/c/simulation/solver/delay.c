@@ -34,6 +34,7 @@
  */
 
 #include "delay.h"
+#include "epsilon.h"
 #include "../../util/omc_error.h"
 #include "../../util/ringbuffer.h"
 #include "../../openmodelica.h"
@@ -84,7 +85,7 @@ static int findTime(double time, RINGBUFFER *delayStruct, int* foundEvent)
     /* Check for an event */
     if (fabs(prevTime-curTime)< 1e-12) {
       *foundEvent = 1 /* true */;
-      plotRingBuffer(delayStruct, LOG_UTIL, printDelayBuffer);
+      printRingBuffer(delayStruct, LOG_DEBUG, printDelayBuffer);
     }
     if (curTime > time) {
       pos--;
@@ -120,6 +121,7 @@ void storeDelayedExpression(DATA* data, threadData_t *threadData, int exprNumber
   assertStreamPrint(threadData, exprNumber < data->modelData->nDelayExpressions, "storeDelayedExpression: invalid expression number %d", exprNumber);
   assertStreamPrint(threadData, 0 <= exprNumber, "storeDelayedExpression: invalid expression number %d", exprNumber);
   assertStreamPrint(threadData, data->simulationInfo->startTime <= time, "storeDelayedExpression: time is smaller than starting time.");
+  assertStreamPrint(threadData, delayTime >= 0, "Negative delay requested: delayTime = %g", delayTime);
 
   /* Check if time is greater equal then last stored time in delay structure */
   if (length > 0) {
@@ -159,7 +161,7 @@ void storeDelayedExpression(DATA* data, threadData_t *threadData, int exprNumber
 
   /* Debug print */
   infoStreamPrint(LOG_DELAY, 0, "storeDelayed[%d] (%g,%g) position=%d", exprNumber, time, exprValue, ringBufferLength(data->simulationInfo->delayStructure[exprNumber]));
-  plotRingBuffer(data->simulationInfo->delayStructure[exprNumber], LOG_DELAY, printDelayBuffer);
+  printRingBuffer(data->simulationInfo->delayStructure[exprNumber], LOG_DELAY, printDelayBuffer);
 }
 
 
@@ -193,7 +195,9 @@ double delayImpl(DATA* data, threadData_t *threadData, int exprNumber, double ex
   /* Check for errors */
   assertStreamPrint(threadData, 0 <= exprNumber, "invalid exprNumber = %d", exprNumber);
   assertStreamPrint(threadData, exprNumber < data->modelData->nDelayExpressions, "invalid exprNumber = %d", exprNumber);
-  assertStreamPrint(threadData, delayTime >=  0, "Negative delay requested: delayTime = %g", delayTime);
+  assertStreamPrint(threadData, delayTime >= 0, "Negative delay requested: delayTime = %g", delayTime);
+  assertStreamPrint(threadData, delayTime >= DASSL_STEP_EPS, "delayImpl: delayTime is zero or too small.\n" \
+    "OpenModelica doesn't support delay operator with zero delay time.");
 
   /* Return expression value before simulation start */
   if(time <= data->simulationInfo->startTime)

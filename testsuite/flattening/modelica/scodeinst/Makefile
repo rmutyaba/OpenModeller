@@ -1,7 +1,8 @@
 TEST=../../../rtest -v
 
 TESTFILES=\
-ActualStreamMinMax.mo \
+ActualStreamMinMax1.mo \
+ActualStreamMinMax2.mo \
 ActualStream.mo \
 ActualStreamNonCref1.mo \
 ActualStreamNoStream1.mo \
@@ -19,6 +20,8 @@ ArrayBoundsEq1.mo\
 ArrayConnect1.mo \
 ArrayConnect2.mo \
 ArrayConnect3.mo \
+ArrayConnect4.mo \
+ArrayConnect5.mo \
 ArrayConstructorComplex1.mo \
 ArrayConstructorRecord1.mo \
 ArrayConstructorRecord2.mo \
@@ -45,6 +48,7 @@ BindingArray5.mo \
 BindingArray6.mo \
 BindingArray7.mo \
 BindingArray8.mo \
+BindingArray9.mo \
 BindingInvalidType1.mo \
 BindingInvalidType2.mo \
 BindingInvalidType3.mo \
@@ -133,6 +137,7 @@ CevalFuncArray2.mo \
 CevalFuncArray3.mo \
 CevalFuncArray4.mo \
 CevalFuncArray5.mo \
+CevalFuncArray6.mo \
 CevalFuncAssert1.mo \
 CevalFuncAssert2.mo \
 CevalFuncFor1.mo \
@@ -260,6 +265,7 @@ Condition5.mo \
 Condition6.mo \
 Condition7.mo \
 Condition8.mo \
+Condition9.mo \
 ConditionInvalid1.mo \
 ConditionInvalidBinding1.mo \
 ConditionInvalidBinding2.mo \
@@ -281,6 +287,7 @@ ConnectComplex1.mo \
 ConnectComplexFlow1.mo \
 ConnectDiffOrder1.mo \
 ConnectDiffOrder2.mo \
+ConnectExtendsBuiltin1.mo \
 ConnectExternalObject1.mo \
 ConnectInitial.mo \
 ConnectInvalidForm1.mo \
@@ -292,6 +299,7 @@ ConnectNonConnector3.mo \
 ConnectNonConnector4.mo \
 ConnectNonConnector5.mo \
 ConnectNonConnector6.mo \
+ConnectStream1.mo \
 ConstantConnector1.mo \
 ConstantConnector2.mo \
 ConstantConnector3.mo \
@@ -343,6 +351,9 @@ DimUnknown6.mo \
 DimUnknown7.mo \
 DimUnknown8.mo \
 DimUnknown9.mo \
+DimUnknown10.mo \
+DimUnknown11.mo \
+DimUnknown12.mo \
 dim1.mo \
 dim13.mo \
 dim16.mo \
@@ -416,6 +427,8 @@ ExpandableConnector5.mo \
 ExpandableConnector6.mo \
 ExpandableConnector7.mo \
 ExpandableConnector8.mo \
+ExpandableConnector9.mo \
+ExpandableConnectorComplex1.mo \
 ExpandableConnectorFlow1.mo \
 ExpandableConnectorFlow2.mo \
 ExpandableConnectorNonDecl1.mo \
@@ -662,6 +675,10 @@ FunctionSections3.mo \
 FunctionSections4.mo \
 FunctionSections5.mo \
 FunctionStreamPrefix.mo \
+FunctionUnitialized1.mo \
+FunctionUnitialized2.mo \
+FunctionUnitialized3.mo \
+FunctionUnitialized4.mo \
 IfConnect1.mo \
 IfConnect2.mo \
 IfConnect3.mo \
@@ -727,6 +744,7 @@ ImportUnqualified3.mo \
 ImpureCall1.mo \
 Inline1.mo \
 Inline2.mo \
+Inline3.mo \
 InnerOuter1.mo \
 InnerOuter2.mo \
 InnerOuter3.mo \
@@ -754,6 +772,7 @@ InnerOuterMissing5.mo \
 InnerOuterMissing6.mo \
 InnerOuterMissing7.mo \
 InnerOuterMissing8.mo \
+InnerOuterMissing9.mo \
 InnerOuterNotInner1.mo \
 InnerOuterPartialOuter1.mo \
 InnerOuterPartialOuter2.mo \
@@ -875,6 +894,9 @@ PackageBinding1.mo \
 PackageConstant1.mo \
 PackageConstant3.mo \
 PackageConstant4.mo \
+PackageConstant5.mo \
+PackageConstant6.mo \
+PackageConstant7.mo \
 ParameterBug.mos \
 ParameterDer.mo \
 PartialApplication1.mo \
@@ -990,12 +1012,14 @@ ReductionInvalidTypeMin.mo \
 ReductionInvalidTypeMax.mo \
 Reinit1.mo \
 Reinit2.mo \
+Reinit3.mo \
 ReinitInvalid1.mo \
 ReinitInvalid2.mo \
 ReinitInvalid3.mo \
 ReinitInvalid4.mo \
 ReinitInvalid5.mo \
 ReinitInvalid6.mo \
+ReinitInvalid7.mo \
 Return1.mo \
 Return2.mo \
 Size1.mo \

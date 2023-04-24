@@ -99,6 +99,7 @@ import InteractiveUtil;
 import List;
 import Lookup;
 import Mod;
+import PackageManagement;
 import Parser;
 import Print;
 import SCode;
@@ -369,6 +370,8 @@ public function loadModel
 protected
   Boolean b;
 algorithm
+  PackageManagement.installCachedPackages();
+
   for m in imodelsToLoad loop
     (pnew, b) := loadModel1(m, modelicaPath, forceLoad, notifyLoad,
       checkUses, requireExactVersion, encrypted, pathToFile, pnew);
@@ -392,12 +395,12 @@ protected
   Boolean onlyCheckFirstModelicaPath;
   Absyn.Path path;
   list<String> versionsLst;
-  String pathStr, versions, version, thisModelicaPath, dir;
+  String pathStr, versions, version, thisModelicaPath, dir, requestedBy;
   Absyn.Program pnew;
   ErrorTypes.MessageTokens msgTokens;
   Option<Absyn.Class> cl;
 algorithm
-  (path, _, versionsLst, onlyCheckFirstModelicaPath) := modelToLoad;
+  (path, requestedBy, versionsLst, onlyCheckFirstModelicaPath) := modelToLoad;
   if onlyCheckFirstModelicaPath then
     /* Using loadFile() */
     thisModelicaPath::_ := System.strtok(modelicaPath, Autoconf.groupDelimiter);
@@ -423,7 +426,7 @@ algorithm
 
       if notifyLoad and not forceLoad then
         version := getPackageVersion(path, pnew);
-        msgTokens := {AbsynUtil.pathString(path), version};
+        msgTokens := {AbsynUtil.pathString(path), version, requestedBy};
         Error.addMessage(Error.NOTIFY_LOAD_MODEL_DUE_TO_USES, msgTokens);
         System.loadModelCallBack(AbsynUtil.pathFirstIdent(path));
       end if;
@@ -1281,10 +1284,10 @@ algorithm
 
     case ("parseEncryptedPackage",Values.STRING(filename)::Values.STRING(workdir)::_)
       algorithm
+        vals := {}; // make sure is initialized, see #9250
         str := System.pwd();
         try
           0 := System.cd(System.dirname(filename));
-          vals := {};
           (b, filename) := unZipEncryptedPackageAndCheckFile(workdir, filename, false);
           if b then
             // clear the errors before!
@@ -1299,6 +1302,10 @@ algorithm
         0 := System.cd(str);
       then
         ValuesUtil.makeArray(vals);
+
+    case ("parseEncryptedPackage",_)
+      then
+        ValuesUtil.makeArray({});
 
     case ("loadEncryptedPackage",Values.STRING(filename)::Values.STRING(workdir)::Values.BOOL(bval)::Values.BOOL(b)::Values.BOOL(b1)::Values.BOOL(requireExactVersion)::_)
       algorithm
@@ -1462,7 +1469,6 @@ algorithm
           Values.BOOL(sort)})
       algorithm
         paths := InteractiveUtil.getAllSubtypeOf(path, parentClass, SymbolTable.getAbsyn(), qualified, includePartial);
-        paths := listReverse(paths);
         paths := if sort then List.sort(paths, AbsynUtil.pathGe) else paths;
         vals := List.map(paths,ValuesUtil.makeCodeTypeName);
       then
@@ -2241,7 +2247,7 @@ algorithm
 
         System.freeLibrary(libHandle, print_debug);
         // update the build time in the class!
-        Absyn.CLASS(_,_,_,_,Absyn.R_FUNCTION(_),_,info) := InteractiveUtil.getPathedClassInProgram(funcpath, p);
+        Absyn.CLASS(restriction=Absyn.R_FUNCTION(_),info=info) := InteractiveUtil.getPathedClassInProgram(funcpath, p);
 
         w := InteractiveUtil.buildWithin(funcpath);
 

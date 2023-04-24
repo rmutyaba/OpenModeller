@@ -40,6 +40,7 @@ encapsulated package NFTyping
 
 import Binding = NFBinding;
 import Component = NFComponent;
+import NFComponent.ComponentState;
 import Dimension = NFDimension;
 import Equation = NFEquation;
 import Class = NFClass;
@@ -167,9 +168,14 @@ algorithm
     case Class.TYPED_DERIVED()
       algorithm
         typeComponents(c.baseClass, context);
-        c2 := InstNode.getClass(c.baseClass);
-        c2 := Class.setRestriction(c.restriction, c2);
-        InstNode.updateClass(c2, cls);
+
+        // Only collapse for the normal instantiation, for the instance API we
+        // need the derived class chains.
+        if not InstContext.inInstanceAPI(context) then
+          c2 := InstNode.getClass(c.baseClass);
+          c2 := Class.setRestriction(c.restriction, c2);
+          InstNode.updateClass(c2, cls);
+        end if;
       then
         ();
 
@@ -408,12 +414,14 @@ end makeRecordType;
 function typeComponent
   input InstNode component;
   input InstContext.Type context;
+  input Boolean typeChildren = true;
   output Type ty;
 protected
   InstNode node = InstNode.resolveOuter(component);
-  Component c = InstNode.component(node), c_typed;
+  Component c = InstNode.component(node);
   Expression cond;
   Boolean is_deleted;
+  array<Dimension> dims;
 algorithm
   if InstNode.isOnlyOuter(component) then
     return;
@@ -421,14 +429,18 @@ algorithm
 
   ty := match c
     // An untyped component, type it.
-    case Component.UNTYPED_COMPONENT()
+    case Component.COMPONENT(ty = Type.UNTYPED(dimensions = dims))
       algorithm
         // Type the component's dimensions.
-        typeDimensions(c.dimensions, node, c.binding, context, c.info);
+        typeDimensions(dims, node, c.binding, context, c.info);
 
         // Construct the type of the component and update the node with it.
-        ty := typeClassType(c.classInst, c.binding, context, component);
-        ty := Type.liftArrayLeftList(ty, arrayList(c.dimensions));
+        if InstNode.isEmpty(c.classInst) then
+          ty := Type.UNKNOWN();
+        else
+          ty := typeClassType(c.classInst, c.binding, context, component);
+        end if;
+        ty := Type.liftArrayLeftList(ty, arrayList(dims));
 
         if Binding.isBound(c.condition) then
           c.condition := typeComponentCondition(c.condition, context, evaluate = true);
@@ -437,23 +449,26 @@ algorithm
           is_deleted := false;
         end if;
 
-        c_typed := Component.setType(ty, c);
-        InstNode.updateComponent(c_typed, node);
+        if typeChildren then
+          c.ty := ty;
+          c.state := ComponentState.Typed;
+          InstNode.updateComponent(c, node);
 
-        if not is_deleted then
-          // Check that flow/stream variables are Real.
-          checkComponentStreamAttribute(c.attributes.connectorType, ty, component);
+          if not is_deleted and not InstNode.isEmpty(c.classInst) then
+            // Check that flow/stream variables are Real.
+            checkComponentStreamAttribute(c.attributes.connectorType, ty, component);
 
-          // Type the component's children.
-          typeComponents(c.classInst, context);
+            // Type the component's children.
+            typeComponents(c.classInst, context);
 
-          checkConnectorTypeBalance(node);
+            checkConnectorTypeBalance(node);
+          end if;
         end if;
       then
         ty;
 
     // A component that has already been typed, skip it.
-    case Component.TYPED_COMPONENT() then c.ty;
+    case Component.COMPONENT() then c.ty;
     case Component.ITERATOR() then c.ty;
     case Component.ENUM_LITERAL(literal = Expression.ENUM_LITERAL(ty = ty)) then ty;
 
@@ -692,6 +707,7 @@ algorithm
             then
               (dim, ty_err);
 
+          else (dimension, TypingError.NO_ERROR());
         end match;
 
         () := match ty_err
@@ -835,7 +851,7 @@ algorithm
       (binding, parentDims) := getRecordElementBinding(parent);
     else
       // Otherwise type the binding, so we can safely look up the field name.
-      binding := typeBinding(parent_binding, NFInstContext.CLASS);
+      binding := typeBinding(parent_binding, InstContext.set(NFInstContext.CLASS, NFInstContext.DIMENSION));
 
       // If the binding wasn't typed before, update the parent component with it
       // so we don't have to type it again.
@@ -921,11 +937,12 @@ algorithm
   end if;
 
   () := match c
-    case Component.TYPED_COMPONENT()
+    case Component.COMPONENT()
       guard Component.isDeleted(c)
       then ();
 
-    case Component.TYPED_COMPONENT(binding = Binding.UNTYPED_BINDING(), attributes = attrs)
+    case Component.COMPONENT(binding = Binding.UNTYPED_BINDING(), attributes = attrs)
+      guard c.state == ComponentState.Typed
       algorithm
         name := InstNode.name(component);
         binding := c.binding;
@@ -934,7 +951,8 @@ algorithm
         try
           binding := typeBinding(binding, InstContext.set(context, NFInstContext.BINDING));
 
-          if not (InstContext.inAnnotation(context) and stringEq(name, "graphics")) then
+          if not (InstContext.inAnnotation(context) and stringEq(name, "graphics") or
+                  InstNode.isEmpty(c.classInst)) then
             binding := TypeCheck.matchBinding(binding, c.ty, name, node, context);
           end if;
 
@@ -955,24 +973,32 @@ algorithm
         ErrorExt.delCheckpoint(getInstanceName());
 
         c.binding := binding;
+        c.state := ComponentState.TypeChecked;
 
         InstNode.updateComponent(c, node);
 
-        if typeChildren then
+        if typeChildren and not InstNode.isEmpty(c.classInst) then
           typeBindings(c.classInst, context);
         end if;
       then
         ();
 
     // A component without a binding, or with a binding that's already been typed.
-    case Component.TYPED_COMPONENT()
+    case Component.COMPONENT()
+      guard c.state >= ComponentState.Typed
       algorithm
-        if Binding.isTyped(c.binding) then
-          c.binding := TypeCheck.matchBinding(c.binding, c.ty, InstNode.name(component), node, context);
-          checkComponentBindingVariability(InstNode.name(component), c, c.binding, context);
+        // Type check the binding if it hasn't already been checked.
+        if c.state == ComponentState.Typed then
+          if Binding.isTyped(c.binding) then
+            c.binding := TypeCheck.matchBinding(c.binding, c.ty, InstNode.name(component), node, context);
+            checkComponentBindingVariability(InstNode.name(component), c, c.binding, context);
+          end if;
+
+          c.state := ComponentState.TypeChecked;
+          InstNode.updateComponent(c, node);
         end if;
 
-        if typeChildren then
+        if typeChildren and not InstNode.isEmpty(c.classInst) then
           typeBindings(c.classInst, context);
         end if;
       then
@@ -981,7 +1007,8 @@ algorithm
     // An untyped component with a binding. This might happen when typing a
     // dimension and having to evaluate the binding of a not yet typed
     // component. Type only the binding and let the case above handle the rest.
-    case Component.UNTYPED_COMPONENT(binding = Binding.UNTYPED_BINDING(), attributes = attrs)
+    case Component.COMPONENT(binding = Binding.UNTYPED_BINDING(), attributes = attrs)
+      guard c.state < ComponentState.Typed
       algorithm
         name := InstNode.name(component);
         binding := typeBinding(c.binding, InstContext.set(context, NFInstContext.BINDING));
@@ -996,6 +1023,9 @@ algorithm
         InstNode.updateComponent(c, node);
       then
         ();
+
+    // An untyped component without a binding or an already type checked component, do nothing.
+    case Component.COMPONENT() then ();
 
     case Component.ENUM_LITERAL() then ();
     case Component.TYPE_ATTRIBUTE(modifier = Modifier.NOMOD()) then ();
@@ -1472,6 +1502,9 @@ function expandProxySubscripts
 protected
   Integer dim_count;
   Expression cr_exp;
+  Type ty;
+  list<Dimension> dims;
+  Dimension dim;
 algorithm
   for s in subscripts loop
     outSubscripts := match s
@@ -1499,10 +1532,18 @@ algorithm
 
             // Add size expressions to the list of fill dimensions.
             if dim_count > 0 then
-              cr_exp := Expression.fromCref(ComponentRef.fromNode(s.parent, InstNode.getType(s.parent)));
+              ty := InstNode.getType(s.parent);
+              cr_exp := Expression.fromCref(ComponentRef.fromNode(s.parent, ty));
+              dims := Type.arrayDims(ty);
 
               for i in 1:dim_count loop
-                fillDimensions := Expression.SIZE(cr_exp, SOME(Expression.INTEGER(i))) :: fillDimensions;
+                dim :: dims := dims;
+
+                if Dimension.isKnown(dim, allowExp = true) then
+                  fillDimensions := Dimension.sizeExp(dim) :: fillDimensions;
+                else
+                  fillDimensions := Expression.SIZE(cr_exp, SOME(Expression.INTEGER(i))) :: fillDimensions;
+                end if;
               end for;
             end if;
           end if;
@@ -1570,40 +1611,44 @@ protected
 algorithm
   ty := Expression.typeOf(exp);
 
+  // If the expression has already been typed, just get the dimension from the type.
   if Type.isKnown(ty) then
-    // If the expression has already been typed, just get the dimension from the type.
     (dim, error) := nthDimensionBoundsChecked(ty, dimIndex);
     typedExp := SOME(exp);
-  else
-    // Otherwise we try to type as little as possible of the expression to get
-    // the dimension we need, to avoid introducing unnecessary cycles.
-    (dim, error) := match exp
-      // An untyped array, use typeArrayDim to get the dimension.
-      case Expression.ARRAY(ty = Type.UNKNOWN())
-        then typeArrayDim(exp, dimIndex);
 
-      // A cref, use typeCrefDim to get the dimension.
-      case Expression.CREF()
-        then typeCrefDim(exp.cref, dimIndex, context, info);
-
-      // Any other expression, type the whole expression and get the dimension
-      // from the type.
-      else
-        algorithm
-          (e, ty, _) := typeExp(exp, context, info);
-
-          if Type.isConditionalArray(ty) then
-            e := Expression.map(e,
-              function evaluateArrayIf(target = Ceval.EvalTarget.GENERIC(info)));
-            (e, ty, _) := typeExp(e, context, info);
-          end if;
-
-          typedExp := SOME(e);
-        then
-          nthDimensionBoundsChecked(ty, dimIndex);
-
-    end match;
+    if not Dimension.isUnknown(dim) then
+      return;
+    end if;
   end if;
+
+  // Otherwise we try to type as little as possible of the expression to get
+  // the dimension we need, to avoid introducing unnecessary cycles.
+  (dim, error) := match exp
+    // An untyped array, use typeArrayDim to get the dimension.
+    case Expression.ARRAY(ty = Type.UNKNOWN())
+      then typeArrayDim(exp, dimIndex);
+
+    // A cref, use typeCrefDim to get the dimension.
+    case Expression.CREF()
+      then typeCrefDim(exp.cref, dimIndex, context, info);
+
+    // Any other expression, type the whole expression and get the dimension
+    // from the type.
+    else
+      algorithm
+        (e, ty, _) := typeExp(exp, context, info);
+
+        if Type.isConditionalArray(ty) then
+          e := Expression.map(e,
+            function evaluateArrayIf(target = Ceval.EvalTarget.GENERIC(info)));
+          (e, ty, _) := typeExp(e, context, info);
+        end if;
+
+        typedExp := SOME(e);
+      then
+        nthDimensionBoundsChecked(ty, dimIndex);
+
+  end match;
 end typeExpDim;
 
 function evaluateArrayIf
@@ -1693,6 +1738,7 @@ protected
   InstNode node;
   Component c;
   Type ty;
+  array<Dimension> dims;
 algorithm
   // TODO: If the cref has subscripts it becomes trickier to correctly calculate
   //       the dimension. For now we take the easy way out and just type the
@@ -1727,19 +1773,19 @@ algorithm
           end if;
 
           dim_count := match c
-            case Component.UNTYPED_COMPONENT()
+            case Component.COMPONENT(ty = Type.UNTYPED(dimensions = dims))
               algorithm
-                dim_count := arrayLength(c.dimensions);
+                dim_count := arrayLength(dims);
 
                 if index <= dim_count and index > 0 then
-                  dim := typeDimension(c.dimensions, index, node, c.binding, context, c.info);
+                  dim := typeDimension(dims, index, node, c.binding, context, c.info);
                   checkCyclicDimension(dim, node, index, c.info);
                   return;
                 end if;
               then
                 dim_count;
 
-            case Component.TYPED_COMPONENT()
+            case Component.COMPONENT()
               algorithm
                 dim_count := Type.dimensionCount(c.ty);
 
@@ -1880,7 +1926,7 @@ algorithm
     case ComponentRef.CREF(node = InstNode.COMPONENT_NODE())
       algorithm
         if Component.hasCondition(InstNode.component(cref.node)) and
-           (not InstContext.inConnect(context) or InstContext.inSubscript(context)) then
+           (not InstContext.inConnect(context) or InstContext.inSubscript(context)) and not InstContext.inRelaxed(context) then
           Error.addStrictMessage(Error.CONDITIONAL_COMPONENT_INVALID_CONTEXT,
             {InstNode.name(cref.node)}, info);
         end if;
@@ -1888,7 +1934,7 @@ algorithm
         // The context used when typing a component node depends on where the
         // component was declared, not where it's used. This can be different to
         // the given context, e.g. for package constants used in a function.
-        node_ty := typeComponent(cref.node, crefContext(cref.node));
+        node_ty := typeComponent(cref.node, crefContext(cref.node), typeChildren = firstPart or not InstContext.inDimension(context));
 
         (subs, subs_var) := typeSubscripts(cref.subscripts, node_ty, cref, context, info);
         (rest_cr, rest_var) := typeCref2(cref.restCref, context, info, false);
@@ -2564,7 +2610,7 @@ algorithm
   cls := InstNode.getClass(classNode);
 
   _ := match cls
-    case Class.INSTANCED_CLASS(restriction = Restriction.TYPE()) then ();
+    case Class.INSTANCED_CLASS() guard Type.isBasic(Type.arrayElementType(cls.ty)) then ();
 
     case Class.INSTANCED_CLASS(elements = ClassTree.FLAT_TREE(components = components),
         sections = sections)
@@ -2707,6 +2753,7 @@ algorithm
     else
       algorithm
         (outArg, ty, var) := typeExp(arg, NFInstContext.FUNCTION, info);
+        Call.updateExternalRecordArgsInType(ty);
       then
         match arg
           // All kinds of crefs are allowed.
@@ -2843,7 +2890,8 @@ algorithm
   end if;
 
   () := match comp
-    case Component.TYPED_COMPONENT()
+    case Component.COMPONENT()
+      guard comp.state >= ComponentState.TypeChecked
       algorithm
         typeClassSections(comp.classInst, context);
       then
@@ -2874,8 +2922,8 @@ algorithm
       Integer next_context;
       SourceInfo info;
 
-    case Equation.EQUALITY() then typeEqualityEquation(eq.lhs, eq.rhs, context, eq.source);
-    case Equation.CONNECT()  then typeConnect(eq.lhs, eq.rhs, context, eq.source);
+    case Equation.EQUALITY() then typeEqualityEquation(eq.lhs, eq.rhs, context, eq.scope, eq.source);
+    case Equation.CONNECT()  then typeConnect(eq.lhs, eq.rhs, context, eq.scope, eq.source);
 
     case Equation.FOR()
       algorithm
@@ -2891,36 +2939,36 @@ algorithm
         next_context := InstContext.set(context, NFInstContext.FOR);
         body := list(typeEquation(e, next_context) for e in eq.body);
       then
-        Equation.FOR(eq.iterator, SOME(e1), body, eq.source);
+        Equation.FOR(eq.iterator, SOME(e1), body, eq.scope, eq.source);
 
-    case Equation.IF() then typeIfEquation(eq.branches, context, eq.source);
-    case Equation.WHEN() then typeWhenEquation(eq.branches, context, eq.source);
+    case Equation.IF() then typeIfEquation(eq.branches, context, eq.scope, eq.source);
+    case Equation.WHEN() then typeWhenEquation(eq.branches, context, eq.scope, eq.source);
 
     case Equation.ASSERT()
       algorithm
         info := ElementSource.getInfo(eq.source);
         (e1, e2, e3) := typeAssert(eq.condition, eq.message, eq.level, context, info);
       then
-        Equation.ASSERT(e1, e2, e3, eq.source);
+        Equation.ASSERT(e1, e2, e3, eq.scope, eq.source);
 
     case Equation.TERMINATE()
       algorithm
         info := ElementSource.getInfo(eq.source);
         e1 := typeOperatorArg(eq.message, Type.STRING(), context, "terminate", "message", 1, info);
       then
-        Equation.TERMINATE(e1, eq.source);
+        Equation.TERMINATE(e1, eq.scope, eq.source);
 
     case Equation.REINIT()
       algorithm
         (e1, e2) := typeReinit(eq.cref, eq.reinitExp, context, eq.source);
       then
-        Equation.REINIT(e1, e2, eq.source);
+        Equation.REINIT(e1, e2, eq.scope, eq.source);
 
     case Equation.NORETCALL()
       algorithm
         e1 := typeExp(eq.exp, context, ElementSource.getInfo(eq.source));
       then
-        Equation.NORETCALL(e1, eq.source);
+        Equation.NORETCALL(e1, eq.scope, eq.source);
 
     else eq;
   end match;
@@ -2930,6 +2978,7 @@ function typeConnect
   input Expression lhsConn;
   input Expression rhsConn;
   input InstContext.Type context;
+  input InstNode scope;
   input DAE.ElementSource source;
   output Equation connEq;
 protected
@@ -2972,7 +3021,7 @@ algorithm
     end if;
   end if;
 
-  connEq := Equation.CONNECT(lhs, rhs, source);
+  connEq := Equation.CONNECT(lhs, rhs, scope, source);
 end typeConnect;
 
 function typeConnector
@@ -3142,6 +3191,10 @@ algorithm
         end if;
 
         checkAssignment(e1, e2, var, context, info);
+
+        if Expression.isExternalCall(e2) then
+          Call.updateExternalRecordArgs(Expression.tupleElements(e1));
+        end if;
       then
         Statement.ASSIGNMENT(e1, e2, ty1, st.source);
 
@@ -3212,6 +3265,18 @@ algorithm
         e1 := typeOperatorArg(st.message, Type.STRING(), context, "terminate", "message", 1, info);
       then
         Statement.TERMINATE(e1, st.source);
+
+    case Statement.REINIT()
+      algorithm
+        if InstContext.inFunction(context) then
+          Error.addSourceMessage(Error.EXP_INVALID_IN_FUNCTION, {"reinit"},
+            ElementSource.getInfo(st.source));
+          fail();
+        end if;
+
+        (e1, e2) := typeReinit(st.cref, st.reinitExp, context, st.source);
+      then
+        Statement.REINIT(e1, e2, st.source);
 
     case Statement.NORETCALL()
       algorithm
@@ -3293,6 +3358,7 @@ function typeEqualityEquation
   input Expression lhsExp;
   input Expression rhsExp;
   input InstContext.Type context;
+  input InstNode scope;
   input DAE.ElementSource source;
   output Equation eq;
 protected
@@ -3321,7 +3387,11 @@ algorithm
     fail();
   end if;
 
-  eq := Equation.EQUALITY(e1, e2, ty, source);
+  eq := Equation.EQUALITY(e1, e2, ty, scope, source);
+
+  if Expression.isExternalCall(e2) then
+    Call.updateExternalRecordArgs(Expression.tupleElements(e1));
+  end if;
 end typeEqualityEquation;
 
 function typeCondition
@@ -3356,6 +3426,7 @@ end typeCondition;
 function typeIfEquation
   input list<Equation.Branch> branches;
   input InstContext.Type context;
+  input InstNode scope;
   input DAE.ElementSource source;
   output Equation ifEq;
 protected
@@ -3402,12 +3473,13 @@ algorithm
     ErrorExt.delCheckpoint(getInstanceName());
   end for;
 
-  ifEq := Equation.IF(bl2, source);
+  ifEq := Equation.IF(bl2, scope, source);
 end typeIfEquation;
 
 function typeWhenEquation
   input list<Equation.Branch> branches;
   input InstContext.Type context;
+  input InstNode scope;
   input DAE.ElementSource source;
   output Equation whenEq;
 protected
@@ -3440,7 +3512,7 @@ algorithm
     accum_branches := Equation.makeBranch(cond, body, var) :: accum_branches;
   end for;
 
-  whenEq := Equation.WHEN(listReverseInPlace(accum_branches), source);
+  whenEq := Equation.WHEN(listReverseInPlace(accum_branches), scope, source);
 end typeWhenEquation;
 
 function typeWhenCondition
@@ -3668,7 +3740,7 @@ algorithm
           index := 1;
 
           for sub in subs loop
-            if Subscript.isIterator(sub, iterator) then
+            if Subscript.equalsIterator(sub, iterator) then
               crefs := (cref, index) :: crefs;
             end if;
 

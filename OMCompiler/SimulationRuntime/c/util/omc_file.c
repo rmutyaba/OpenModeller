@@ -85,6 +85,8 @@ char* omc_wchar_to_multibyte_str(const wchar_t* in_wc_str) {
  * Using (long) unicode absolute path and `_wfopen` on Windows.
  * Using `fopen` on Unix.
  *
+ * Returns NULL on failure
+ *
  * @param filename  File name.
  * @param mode      Kind of access to file.
  * @return FILE*    Pointer to opened file.
@@ -105,7 +107,24 @@ FILE* omc_fopen(const char *filename, const char *mode)
 #else /* unix */
   FILE *f = fopen(filename, mode);
 #endif
+  if (f == NULL || ferror(f)) {
+    return NULL;
+  }
   return f;
+}
+
+/**
+ * @brief Close a file.
+ *
+ * @param FILE*    Pointer to opened file.
+ */
+int omc_fclose(FILE* stream)
+{
+  int err = fclose(stream);
+  if (0 != err) {
+    fprintf(stderr, "Error: omc_fclose() failed to close file.\n");
+  }
+  return err;
 }
 
 /**
@@ -136,7 +155,27 @@ size_t omc_fread(void *buffer, size_t size, size_t count, FILE *stream, int allo
   return read_len;
 }
 
+/**
+ * @brief Write data to stream.
+ *
+ * @param buffer            Pointer to block of memory with a minimum size of `size*count` bytes.
+ * @param size              Size in bytes of each element to write.
+ * @param count             Number of elements to write, each with size `size` bytes.
+ * @param stream            Pointer to FILE object with output stream.
+ * @return size_t           Total number of elements written.
+ */
+size_t omc_fwrite(void *buffer, size_t size, size_t count, FILE *stream) {
+  size_t write_len = fwrite(buffer, size, count, stream);
+  if (ferror(stream)) {
+    fprintf(stderr, "Error: omc_fwrite() failed to write file.\n");
+  }
+  if (write_len != count) {
+    fprintf(stderr, "Error writing stream: unexpected end of file.\n");
+    fprintf(stderr, "Expected to write %ld. Wrote only %ld\n", count, write_len);
+  }
 
+  return write_len;
+}
 
 #if defined(__MINGW32__) || defined(_MSC_VER)
 /**
@@ -171,6 +210,44 @@ int omc_stat(const char *filename, omc_stat_t* statbuf)
 }
 #endif
 
+
+#if defined(__MINGW32__) || defined(_MSC_VER)
+/**
+ * @brief File attributes
+ *
+ * Using (long) unicode absolute path and `_wstat` on Windows.
+ * Using `stat` on Unix.
+ *
+ * @param filename  File name.
+ * @param statbuf   Pointer to stat structure.
+ * @return int      0 on success, -1 on error.
+ */
+int omc_lstat(const char *filename, omc_stat_t* statbuf)
+{
+  return omc_stat(filename, statbuf);
+}
+#else /* unix */
+int omc_lstat(const char *filename, omc_stat_t* statbuf)
+{
+  int res;
+  res = lstat(filename, statbuf);
+  return res;
+}
+#endif
+
+/**
+ * @brief checks if a file/folder exists on the system.
+ * NOTE: Will return success even for directories, i.e., will not confirm that it is indeed a file.
+ *
+ * @param filename  the filename to check for existence.
+ * @return int  returns 1 if the file/folder exists, 0 otherwise.
+ */
+int omc_file_exists(const char* filename) {
+  omc_stat_t statbuf;
+  return omc_stat(filename, &statbuf) == 0;
+}
+
+
 /**
  * @brief Unlink file.
  *
@@ -180,8 +257,7 @@ int omc_stat(const char *filename, omc_stat_t* statbuf)
  * @param filename  File name
  * @return int      0 on success, -1 on error.
  */
-int omc_unlink(const char *filename)
-{
+int omc_unlink(const char *filename) {
   int result = 0;
 #if defined(__MINGW32__) || defined(_MSC_VER)
   wchar_t* unicodeFilename = omc_multibyte_to_wchar_str(filename);
@@ -202,6 +278,18 @@ int omc_unlink(const char *filename)
   }
   */
   return result;
+}
+
+// zero on success, anything else on failure!
+int omc_rename(const char *source, const char *dest) {
+#if defined(__MINGW32__) || defined(_MSC_VER)
+  // If the function succeeds, the return value is nonzero.
+  // If the function fails, the return value is zero (0). To get extended error information, call GetLastError.
+  return !MoveFileEx(source, dest, MOVEFILE_REPLACE_EXISTING);
+#endif
+  // On success, zero is returned.  On error, -1 is returned, and
+  // errno is set to indicate the error.
+  return rename(source,dest);
 }
 
 #if defined(__MINGW32__) || defined(_MSC_VER)

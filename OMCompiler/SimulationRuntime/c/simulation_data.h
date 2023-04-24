@@ -46,9 +46,9 @@
 #include "util/simulation_options.h"
 #include "util/context.h"
 
-#define omc_dummyVarInfo {-1,-1,"","",omc_dummyFileInfo}
+#define omc_dummyVarInfo {-1,-1,"","",omc_dummyFileInfo_val}
 #define omc_dummyEquationInfo {-1,0,0,-1,NULL}
-#define omc_dummyFunctionInfo {-1,"",omc_dummyFileInfo}
+#define omc_dummyFunctionInfo {-1,"",omc_dummyFileInfo_val}
 #define omc_dummyRealAttribute {NULL,NULL,-DBL_MAX,DBL_MAX,0,0,1.0,0.0}
 
 #define OMC_LINEARIZE_DUMP_LANGUAGE_MODELICA 0
@@ -62,9 +62,10 @@
 #define set_struct(TYPE, x, info) x = (TYPE)info
 #endif
 
-/* Forward declaration of DATA */
+/* Forward declarations */
 struct DATA;
 typedef struct DATA DATA;
+typedef struct VALUES_LIST VALUES_LIST;
 
 /* Model info structures */
 typedef struct VAR_INFO
@@ -151,6 +152,27 @@ typedef struct SPARSE_PATTERN
   unsigned int maxColors;         /* Number of colors */
 } SPARSE_PATTERN;
 
+/* NONLINEAR_PATTERN
+ *
+ * nonlinear pattern used for initial stability analysis.
+ * The rows and columns are represented in a single vector
+ * with index vectors pointing to the start of each
+ * individual row and column.
+ *
+ * Use freeNonlinearPattern(NONLINEAR_PATTERN *nlp) for "destruction" (see simulation/jacobian_util.c/h).
+ *
+ */
+typedef struct NONLINEAR_PATTERN
+{
+  unsigned int numberOfVars;           // number of variables
+  unsigned int numberOfEqns;           // number of equations
+  unsigned int numberOfNonlinear;      // number of all nonlinear entries
+  unsigned int* indexVar;              // size: numberOfVars      - starting index of each column for each variable
+  unsigned int* indexEqn;              // size: numberOfEqns      - starting index of each row for each equation
+  unsigned int* columns;               // size: numberOfNonlinear - all columns appended in one vector
+  unsigned int* rows;                  // size: numberOfNonlinear - all rows appended in one vector
+} NONLINEAR_PATTERN;
+
 /**
  * @brief Analytic jacobian struct
  *
@@ -158,15 +180,15 @@ typedef struct SPARSE_PATTERN
 typedef struct ANALYTIC_JACOBIAN
 {
   JACOBIAN_AVAILABILITY availability;  /* Availability status */
-  unsigned int sizeCols;              /* Number of columns of Jacobian */
-  unsigned int sizeRows;              /* Number of rows of Jacobian */
-  unsigned int sizeTmpVars;           /* Length of vector tmpVars */
-  SPARSE_PATTERN* sparsePattern;      /* Contain sparse pattern including coloring */
-  modelica_real* seedVars;            /* Seed vector for specifying which columns to evaluate */
+  unsigned int sizeCols;               /* Number of columns of Jacobian */
+  unsigned int sizeRows;               /* Number of rows of Jacobian */
+  unsigned int sizeTmpVars;            /* Length of vector tmpVars */
+  SPARSE_PATTERN* sparsePattern;       /* Contain sparse pattern including coloring */
+  modelica_real* seedVars;             /* Seed vector for specifying which columns to evaluate */
   modelica_real* tmpVars;
-  modelica_real* resultVars;          /* Result column for given seed vector */
-  modelica_real dae_cj;               /* Is the scalar in the system Jacobian, proportional to the inverse of the step size. From User Documentation for ida v5.4.0 equation (2.5). */
-  int (*constantEqns)(void* data, threadData_t *threadData, void* thisJacobian, void* parentJacobian);  /* Constant equations independed of seed vector */
+  modelica_real* resultVars;           /* Result column for given seed vector */
+  modelica_real dae_cj;                /* Is the scalar in the system Jacobian, proportional to the inverse of the step size. From User Documentation for ida v5.4.0 equation (2.5). */
+  int (*constantEqns)(void* data, threadData_t *threadData, void* thisJacobian, void* parentJacobian);  /* Constant equations independent of seed vector */
 } ANALYTIC_JACOBIAN;
 
 /* EXTERNAL_INPUT
@@ -281,7 +303,7 @@ typedef struct NLS_USERDATA NLS_USERDATA;
 typedef enum {
   NLS_FAILED = 0,                   /* NLS Solver failed to solve system */
   NLS_SOLVED = 1,                   /* NLS Solver solved system successfully */
-  NLS_SOLVED_LESS_ACCURARCY = 2     /* NLS Solver found a solution with low accuracy */
+  NLS_SOLVED_LESS_ACCURACY = 2     /* NLS Solver found a solution with low accuracy */
 } NLS_SOLVER_STATUS;
 
 #if !defined(OMC_NUM_NONLINEAR_SYSTEMS) || OMC_NUM_NONLINEAR_SYSTEMS>0
@@ -311,13 +333,14 @@ typedef struct NONLINEAR_SYSTEM_DATA
 
   SPARSE_PATTERN *sparsePattern;       /* sparse pattern if no jacobian is available */
   modelica_boolean isPatternAvailable;
+  NONLINEAR_PATTERN* nonlinearPattern;
 
   void (*residualFunc)(RESIDUAL_USERDATA* userData, const double* x, double* res, const int* flag);
   int (*residualFuncConstraints)(RESIDUAL_USERDATA* userData, const double*, double*, const int*);
-  void (*initializeStaticNLSData)(DATA* data, threadData_t *threadData, struct NONLINEAR_SYSTEM_DATA* nonlinsys, modelica_boolean initSparsPattern);
+  void (*initializeStaticNLSData)(DATA* data, threadData_t *threadData, struct NONLINEAR_SYSTEM_DATA* nonlinsys, modelica_boolean initSparsePattern, modelica_boolean initNonlinearPattern);
   int (*strictTearingFunctionCall)(DATA* data, threadData_t *threadData);
-  void (*getIterationVars)(DATA*, double*);
-  int (*checkConstraints)(DATA*, threadData_t *threadData);
+  void (*getIterationVars)(DATA* data, double* array);
+  int (*checkConstraints)(DATA* data, threadData_t *threadData);
 
   NONLINEAR_SOLVER nlsMethod;          /* nonlinear solver */
   void *solverData;
@@ -327,7 +350,7 @@ typedef struct NONLINEAR_SYSTEM_DATA
   modelica_real *nlsxOld;              /* previous x */
   modelica_real *nlsxExtrapolation;    /* extrapolated values for x from old and old2 - used as initial guess */
 
-  void *oldValueList;                  /* old values organized in a sorted list for extrapolation and interpolate, respectively */
+  VALUES_LIST *oldValueList;           /* old values organized in a sorted list for extrapolation and interpolate, respectively */
   modelica_real *resValues;            /* memory space for evaluated residual values */
 
   NLS_SOLVER_STATUS solved;            /* Specifiex if the NLS could be solved (with less accuracy) or failed */
@@ -336,6 +359,7 @@ typedef struct NONLINEAR_SYSTEM_DATA
   /* statistics */
   unsigned long numberOfCall;          /* number of solving calls of this system */
   unsigned long numberOfFEval;         /* number of function evaluations of this system */
+  unsigned long numberOfFailures;      /* number of times solving calls of this system failed */
   unsigned long numberOfJEval;         /* number of jacobian evaluations of this system */
   unsigned long numberOfIterations;    /* number of iteration of non-linear solvers of this system */
   double totalTime;                    /* save the totalTime */
@@ -362,6 +386,7 @@ typedef struct LINEAR_SYSTEM_THREAD_DATA
 
   /* Statistics for each thread */
   unsigned long numberOfCall;          /* number of solving calls of this system */
+  unsigned long numberOfFailures;      /* number of times solving calls of this system failed */
   unsigned long numberOfJEval;         /* number of jacobian evaluations of this system */
   double totalTime;                    /* save the totalTime */
   rtclock_t totalTimeClock;            /* time clock for the totalTime */
@@ -369,20 +394,22 @@ typedef struct LINEAR_SYSTEM_THREAD_DATA
 } LINEAR_SYSTEM_THREAD_DATA;
 
 #if !defined(OMC_NUM_LINEAR_SYSTEMS) || OMC_NUM_LINEAR_SYSTEMS>0
+struct LINEAR_SYSTEM_DATA;
+typedef struct LINEAR_SYSTEM_DATA LINEAR_SYSTEM_DATA;
 typedef struct LINEAR_SYSTEM_DATA
 {
-  void (*setA)(void* data, threadData_t *threadData, void* systemData); /* set matrix A */
-  void (*setb)(void* data, threadData_t *threadData, void* systemData); /* set vector b (rhs) */
-  void (*setAElement)(int row, int col, double value, int nth, void *data, threadData_t *threadData);
-  void (*setBElement)(int row, double value, void *data, threadData_t *threadData);
+  void (*setA)(DATA* data, threadData_t* threadData, LINEAR_SYSTEM_DATA* linearSystemData); /* set matrix A */
+  void (*setb)(DATA* data, threadData_t* threadData, LINEAR_SYSTEM_DATA* linearSystemData); /* set vector b (rhs) */
+  void (*setAElement)(int row, int col, double value, int nth, LINEAR_SYSTEM_DATA* linearSystemData, threadData_t* threadData);
+  void (*setBElement)(int row, double value, LINEAR_SYSTEM_DATA* linearSystemData, threadData_t* threadData);
 
   analyticalJacobianColumn_func_ptr analyticalJacobianColumn;
-  int (*initialAnalyticalJacobian)(void*, threadData_t*, ANALYTIC_JACOBIAN*);
+  int (*initialAnalyticalJacobian)(DATA* data, threadData_t* threadData, ANALYTIC_JACOBIAN* jacobian);
 
   void (*residualFunc)(RESIDUAL_USERDATA* userData, const double* x, double* res, const int* flag);
-  void (*initializeStaticLSData)(void*, threadData_t *threadData, void*, modelica_boolean);
-  int (*strictTearingFunctionCall)(DATA* data, threadData_t *threadData);
-  int (*checkConstraints)(DATA* data, threadData_t *threadData);
+  void (*initializeStaticLSData)(DATA* data, threadData_t* threadData, LINEAR_SYSTEM_DATA* linearSystemData, modelica_boolean initSparsePattern);
+  int (*strictTearingFunctionCall)(DATA* data, threadData_t* threadData);
+  int (*checkConstraints)(DATA* data, threadData_t* threadData);
 
   /* attributes of iteration variables */
   modelica_real *min;
@@ -407,6 +434,7 @@ typedef struct LINEAR_SYSTEM_DATA
   // ToDo: Gather information from all threads if in parallel region
   /* statistics */
   unsigned long numberOfCall;          /* number of solving calls of this system */
+  unsigned long numberOfFailures;      /* number of times solving calls of this system failed */
   unsigned long numberOfJEval;         /* number of jacobian evaluations of this system */
   double totalTime;                    /* save the totalTime */
   rtclock_t totalTimeClock;            /* time clock for the totalTime */
@@ -461,7 +489,7 @@ typedef struct STATE_SET_DATA
    * if analyticalJacobianColumn == NULL no analyticalJacobian is available
    */
   analyticalJacobianColumn_func_ptr analyticalJacobianColumn;
-  int (*initialAnalyticalJacobian)(void*, threadData_t*, ANALYTIC_JACOBIAN*);
+  int (*initialAnalyticalJacobian)(DATA* data, threadData_t* threadData, ANALYTIC_JACOBIAN* jacobian);
   modelica_integer jacobianIndex;
 } STATE_SET_DATA;
 #else
@@ -526,7 +554,7 @@ typedef struct MODEL_DATA
   const char* modelDir;
   const char* modelGUID;
   const char* initXMLData;
-  char* resourcesDir;
+  char* resourcesDir;                   /* Resources directory, only set for FMUs */
   modelica_boolean runTestsuite;       /* true if this model was generated during testing */
 
   int linearizationDumpLanguage;        /* default is 0-modelica, options: 1-matlab, 2-julia, 3-pythong */
@@ -575,6 +603,8 @@ typedef struct MODEL_DATA
   long nSensitivityParamVars;
   long nSetcVars;
   long ndataReconVars;
+  long nSetbVars;
+  long nRelatedBoundaryConditions;
 } MODEL_DATA;
 
 /**
@@ -653,8 +683,8 @@ typedef struct SPATIAL_DISTRIBUTION_DATA {
 
 typedef struct SIMULATION_INFO
 {
-  modelica_real startTime;            /* Start time of the simulation */
-  modelica_real stopTime;             /* Stop time of the simulation */
+  modelica_real startTime;             /* Start time of the simulation */
+  modelica_real stopTime;              /* Stop time of the simulation */
   int useStopTime;
   modelica_integer numSteps;
   modelica_real stepSize;
@@ -666,6 +696,7 @@ typedef struct SIMULATION_INFO
 
   double loggingTimeRecord[2];         /* Time interval in which logging is active. Only used if useLoggingTime=1 */
   int useLoggingTime;                  /* 0 if logging is currently disabled, 1 if enabled */
+  unsigned long maxWarnDisplays;       /* Maximum number repeating warnings are displayed */
 
   LINEAR_SOLVER lsMethod;              /* linear solver */
   LINEAR_SPARSE_SOLVER lssMethod;      /* linear sparse solver */
@@ -717,6 +748,8 @@ typedef struct SIMULATION_INFO
   modelica_boolean* storedRelations;   /* this array contains a copy of relations each time the event iteration starts */
   modelica_real* mathEventsValuePre;
   long* zeroCrossingIndex;             /* := {0, 1, 2, ..., data->modelData->nZeroCrossings-1}; pointer for a list events at event instants */
+  modelica_real* states_left;          /* work array for findRoot in event.c */
+  modelica_real* states_right;         /* work array for findRoot in event.c */
 
   /* old vars for event handling */
   modelica_real timeValueOld;
@@ -739,6 +772,7 @@ typedef struct SIMULATION_INFO
   modelica_real* outputVars;
   modelica_real* setcVars;
   modelica_real* datainputVars;
+  modelica_real* setbVars;
 
   EXTERNAL_INPUT external_input;
 
@@ -760,10 +794,10 @@ typedef struct SIMULATION_INFO
 
   INLINE_DATA* inlineData;
 
-  void* backupSolverData;    /* Used for generic Runge-Kutta methods to get access to some solver details inside callbacks */
+  void* backupSolverData;              /* Used for generic Runge-Kutta methods to get access to some solver details inside callbacks */
 
   /* delay vars */
-  RINGBUFFER **delayStructure;        /* Array of ring buffers for delay expressions */
+  RINGBUFFER **delayStructure;         /* Array of ring buffers for delay expressions */
   const char *OPENMODELICAHOME;
 
   CHATTERING_INFO chatteringInfo;

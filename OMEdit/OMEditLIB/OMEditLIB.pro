@@ -33,6 +33,7 @@ greaterThan(QT_MAJOR_VERSION, 4) {
   QT += printsupport widgets webkitwidgets concurrent
 }
 
+# Set the C++ standard.
 CONFIG += c++14
 
 TARGET = OMEdit
@@ -75,6 +76,14 @@ CONFIG(release, debug|release) { # release
   QMAKE_LFLAGS_RELEASE =
 }
 
+# On older msys the include directory for binutils is in binutils
+# On recent (November 2022) MSYS2 this is no longer needed.
+contains(QT_ARCH, i386) { # 32-bit
+  INCLUDEPATH += $$(OMDEV)/tools/msys/mingw32/include/binutils
+} else { # 64-bit
+  INCLUDEPATH += $$(OMDEV)/tools/msys/mingw64/include/binutils
+}
+
   OPENMODELICAHOME = $$(OMBUILDDIR)
   host_short =
 
@@ -108,6 +117,7 @@ SOURCES += Util/Helper.cpp \
   MainWindow.cpp \
   $$OPENMODELICAHOME/include/omc/scripting-API/OpenModelicaScriptingAPIQt.cpp \
   OMC/OMCProxy.cpp \
+  Modeling/Model.cpp \
   Modeling/MessagesWidget.cpp \
   Modeling/ItemDelegate.cpp \
   Modeling/LibraryTreeWidget.cpp \
@@ -140,11 +150,20 @@ SOURCES += Util/Helper.cpp \
   Annotations/BitmapAnnotation.cpp \
   Annotations/DynamicAnnotation.cpp \
   Annotations/BooleanAnnotation.cpp \
-  Annotations/ColorAnnotation.cpp \
-  Annotations/ExtentAnnotation.cpp \
   Annotations/PointAnnotation.cpp \
   Annotations/RealAnnotation.cpp \
+  Annotations/ColorAnnotation.cpp \
+  Annotations/LinePatternAnnotation.cpp \
+  Annotations/FillPatternAnnotation.cpp \
+  Annotations/PointArrayAnnotation.cpp \
+  Annotations/ArrowAnnotation.cpp \
+  Annotations/SmoothAnnotation.cpp \
+  Annotations/ExtentAnnotation.cpp \
+  Annotations/BorderPatternAnnotation.cpp \
+  Annotations/EllipseClosureAnnotation.cpp \
   Annotations/StringAnnotation.cpp \
+  Annotations/TextAlignmentAnnotation.cpp \
+  Annotations/TextStyleAnnotation.cpp \
   Element/ElementProperties.cpp \
   Element/Transformation.cpp \
   Modeling/DocumentationWidget.cpp \
@@ -200,7 +219,8 @@ SOURCES += Util/Helper.cpp \
   Util/ResourceCache.cpp \
   Util/NetworkAccessManager.cpp \
   FlatModelica/Expression.cpp \
-  FlatModelica/ExpressionFuncs.cpp
+  FlatModelica/ExpressionFuncs.cpp \
+  FlatModelica/Parser.cpp
 
 HEADERS  += Util/Helper.h \
   Util/Utilities.h \
@@ -209,6 +229,7 @@ HEADERS  += Util/Helper.h \
   MainWindow.h \
   $$OPENMODELICAHOME/include/omc/scripting-API/OpenModelicaScriptingAPIQt.h \
   OMC/OMCProxy.h \
+  Modeling/Model.h \
   Modeling/MessagesWidget.h \
   Modeling/ItemDelegate.h \
   Modeling/LibraryTreeWidget.h \
@@ -219,6 +240,7 @@ HEADERS  += Util/Helper.h \
   Modeling/FunctionArgumentDialog.h \
   Modeling/InstallLibraryDialog.h \
   Search/SearchWidget.h \
+  Options/OptionsDefaults.h \
   Options/OptionsDialog.h \
   Editors/BaseEditor.h \
   Editors/ModelicaEditor.h \
@@ -241,11 +263,20 @@ HEADERS  += Util/Helper.h \
   Annotations/BitmapAnnotation.h \
   Annotations/DynamicAnnotation.h \
   Annotations/BooleanAnnotation.h \
-  Annotations/ColorAnnotation.h \
-  Annotations/ExtentAnnotation.h \
   Annotations/PointAnnotation.h \
   Annotations/RealAnnotation.h \
+  Annotations/ColorAnnotation.h \
+  Annotations/LinePatternAnnotation.h \
+  Annotations/FillPatternAnnotation.h \
+  Annotations/PointArrayAnnotation.h \
+  Annotations/ArrowAnnotation.h \
+  Annotations/SmoothAnnotation.h \
+  Annotations/ExtentAnnotation.h \
+  Annotations/BorderPatternAnnotation.h \
+  Annotations/EllipseClosureAnnotation.h \
   Annotations/StringAnnotation.h \
+  Annotations/TextAlignmentAnnotation.h \
+  Annotations/TextStyleAnnotation.h \
   Element/ElementProperties.h \
   Element/Transformation.h \
   Modeling/DocumentationWidget.h \
@@ -305,7 +336,8 @@ HEADERS  += Util/Helper.h \
   Util/ResourceCache.h \
   Util/NetworkAccessManager.h \
   FlatModelica/Expression.h \
-  FlatModelica/ExpressionFuncs.h
+  FlatModelica/ExpressionFuncs.h \
+  FlatModelica/Parser.h
 
 CONFIG(osg) {
 

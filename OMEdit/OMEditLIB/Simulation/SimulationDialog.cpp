@@ -216,7 +216,7 @@ void SimulationDialog::setUpForm()
   mpMethodComboBox = new QComboBox;
   mpMethodComboBox->addItems(solverMethods);
   Utilities::setToolTip(mpMethodComboBox, "Integration Methods", solverMethodsDesc);
-  connect(mpMethodComboBox, SIGNAL(currentIndexChanged(QString)), SLOT(enableDasslIdaOptions(QString)));
+  connect(mpMethodComboBox, SIGNAL(currentIndexChanged(QString)), SLOT(enableDisableOptions(QString)));
   mpMehtodHelpButton = new QToolButton;
   mpMehtodHelpButton->setIcon(QIcon(":/Resources/icons/link-external.svg"));
   mpMehtodHelpButton->setToolTip(tr("Integration help"));
@@ -234,8 +234,8 @@ void SimulationDialog::setUpForm()
   jacobianMethodsDesc.prepend("");
   mpJacobianComboBox->addItems(jacobianMethods);
   Utilities::setToolTip(mpJacobianComboBox, "Jacobians", jacobianMethodsDesc);
-  // dassl/ida options
-  mpDasslIdaOptionsGroupBox = new QGroupBox(tr("DASSL/IDA Options"));
+  // options
+  mpOptionsGroupBox = new QGroupBox(Helper::options);
   // no root finding
   mpRootFindingCheckBox = new QCheckBox(tr("Root Finding"));
   mpRootFindingCheckBox->setToolTip(tr("Activates the internal root finding procedure of methods: dassl and ida."));
@@ -251,18 +251,18 @@ void SimulationDialog::setUpForm()
   // max integration order
   mpMaxIntegrationOrderLabel = new Label(tr("Maximum Integration Order:"));
   mpMaxIntegrationOrderSpinBox = new QSpinBox;
-  // set the layout for DASSL/Ida options groupbox
-  QGridLayout *pDasslIdaOptionsGridLayout = new QGridLayout;
-  pDasslIdaOptionsGridLayout->setColumnStretch(1, 1);
-  pDasslIdaOptionsGridLayout->addWidget(mpRootFindingCheckBox, 0, 0, 1, 2);
-  pDasslIdaOptionsGridLayout->addWidget(mpRestartAfterEventCheckBox, 1, 0, 1, 2);
-  pDasslIdaOptionsGridLayout->addWidget(mpInitialStepSizeLabel, 2, 0);
-  pDasslIdaOptionsGridLayout->addWidget(mpInitialStepSizeTextBox, 2, 1);
-  pDasslIdaOptionsGridLayout->addWidget(mpMaxStepSizeLabel, 3, 0);
-  pDasslIdaOptionsGridLayout->addWidget(mpMaxStepSizeTextBox, 3, 1);
-  pDasslIdaOptionsGridLayout->addWidget(mpMaxIntegrationOrderLabel, 4, 0);
-  pDasslIdaOptionsGridLayout->addWidget(mpMaxIntegrationOrderSpinBox, 4, 1);
-  mpDasslIdaOptionsGroupBox->setLayout(pDasslIdaOptionsGridLayout);
+  // set the layout for options groupbox
+  QGridLayout *pOptionsGridLayout = new QGridLayout;
+  pOptionsGridLayout->setColumnStretch(1, 1);
+  pOptionsGridLayout->addWidget(mpRootFindingCheckBox, 0, 0, 1, 2);
+  pOptionsGridLayout->addWidget(mpRestartAfterEventCheckBox, 1, 0, 1, 2);
+  pOptionsGridLayout->addWidget(mpInitialStepSizeLabel, 2, 0);
+  pOptionsGridLayout->addWidget(mpInitialStepSizeTextBox, 2, 1);
+  pOptionsGridLayout->addWidget(mpMaxStepSizeLabel, 3, 0);
+  pOptionsGridLayout->addWidget(mpMaxStepSizeTextBox, 3, 1);
+  pOptionsGridLayout->addWidget(mpMaxIntegrationOrderLabel, 4, 0);
+  pOptionsGridLayout->addWidget(mpMaxIntegrationOrderSpinBox, 4, 1);
+  mpOptionsGroupBox->setLayout(pOptionsGridLayout);
   // set the layout for integration groupbox
   QGridLayout *pIntegrationGridLayout = new QGridLayout;
   pIntegrationGridLayout->setColumnStretch(1, 1);
@@ -273,7 +273,7 @@ void SimulationDialog::setUpForm()
   pIntegrationGridLayout->addWidget(mpToleranceTextBox, 1, 1, 1, 2);
   pIntegrationGridLayout->addWidget(mpJacobianLabel, 2, 0);
   pIntegrationGridLayout->addWidget(mpJacobianComboBox, 2, 1, 1, 2);
-  pIntegrationGridLayout->addWidget(mpDasslIdaOptionsGroupBox, 3, 0, 1, 3);
+  pIntegrationGridLayout->addWidget(mpOptionsGroupBox, 3, 0, 1, 3);
   mpIntegrationGroupBox->setLayout(pIntegrationGridLayout);
   // Compiler Flags
   mpCflagsLabel = new Label(tr("C/C++ Compiler Flags (Optional):"));
@@ -448,14 +448,12 @@ void SimulationDialog::setUpForm()
   for (int i = 0 ; i < logStreamNames.size() ; i++) {
     QCheckBox *pLogStreamCheckBox = new QCheckBox(logStreamNames[i]);
     pLogStreamCheckBox->setToolTip(logSteamDescriptions[i]);
-    if (column == 0) {
-      mpLoggingGroupLayout->addWidget(pLogStreamCheckBox, row, column++);
-    } else if (column == 1) {
-      mpLoggingGroupLayout->addWidget(pLogStreamCheckBox, row, column++);
-    } else if (column == 2) {
+    if (column == 2) {
       mpLoggingGroupLayout->addWidget(pLogStreamCheckBox, row, column);
       column = 0;
       row++;
+    } else {
+      mpLoggingGroupLayout->addWidget(pLogStreamCheckBox, row, column++);
     }
   }
   mpLoggingGroupBox->setLayout(mpLoggingGroupLayout);
@@ -676,6 +674,7 @@ void SimulationDialog::initializeFields(bool isReSimulate, SimulationOptions sim
       mpTranslationFlagsWidget->getNLSanalyticJacobianCheckBox()->setChecked(pGlobalTranslationFlagsWidget->getNLSanalyticJacobianCheckBox()->isChecked());
       mpTranslationFlagsWidget->getParmodautoCheckBox()->setChecked(pGlobalTranslationFlagsWidget->getParmodautoCheckBox()->isChecked());
       mpTranslationFlagsWidget->getOldInstantiationCheckBox()->setChecked(pGlobalTranslationFlagsWidget->getOldInstantiationCheckBox()->isChecked());
+      mpTranslationFlagsWidget->getEnableFMUImportCheckBox()->setChecked(pGlobalTranslationFlagsWidget->getEnableFMUImportCheckBox()->isChecked());
       mpTranslationFlagsWidget->getAdditionalTranslationFlagsTextBox()->setText(pGlobalTranslationFlagsWidget->getAdditionalTranslationFlagsTextBox()->text());
       // if ignoreCommandLineOptionsAnnotation flag is not set then read the __OpenModelica_commandLineOptions annotation
       if (!OptionsDialog::instance()->getSimulationPage()->getIgnoreCommandLineOptionsAnnotationCheckBox()->isChecked()) {
@@ -703,6 +702,26 @@ void SimulationDialog::initializeFields(bool isReSimulate, SimulationOptions sim
             if (currentIndex > -1) {
               mpTranslationFlagsWidget->getIndexReductionMethodComboBox()->setCurrentIndex(currentIndex);
             }
+          } else if (commandLineOptionKeyFiltered.compare("parmodauto") == 0) {
+            if (commandLineOptionValues.compare(QStringLiteral("false")) == 0) {
+              mpTranslationFlagsWidget->getParmodautoCheckBox()->setChecked(false);
+            } else {
+              mpTranslationFlagsWidget->getParmodautoCheckBox()->setChecked(true);
+            }
+          } else if (commandLineOptionKeyFiltered.compare("allowNonStandardModelica") == 0) { // check allowNonStandardModelica flags i.e., -allowNonStandardModelica=protectedAccess,reinitInAlgorithms etc.
+            QStringList commandLineOptionValuesList = commandLineOptionValues.split(",");
+            QStringList additionalNonStandardModelicaFlagsList;
+            foreach (QString commandLineOptionValue, commandLineOptionValuesList) {
+              commandLineOptionValue = commandLineOptionValue.trimmed();
+              if (commandLineOptionValue.compare("reinitInAlgorithms") == 0) {
+                mpTranslationFlagsWidget->getEnableFMUImportCheckBox()->setChecked(true);
+              } else {
+                additionalNonStandardModelicaFlagsList.append(commandLineOptionValue);
+              }
+            }
+            if (!additionalNonStandardModelicaFlagsList.isEmpty()) {
+              additionalTranslationFlagsList.append(QString("--allowNonStandardModelica=%1").arg(additionalNonStandardModelicaFlagsList.join(",")));
+            }
           } else if (commandLineOptionKeyFiltered.compare("d") == 0) { // check debug flags i.e., -d=evaluateAllParameters,initialization etc.
             QStringList commandLineOptionValuesList = commandLineOptionValues.split(",");
             QStringList additionalDebugFlagsList;
@@ -714,8 +733,6 @@ void SimulationDialog::initializeFields(bool isReSimulate, SimulationOptions sim
                 mpTranslationFlagsWidget->getEvaluateAllParametersCheckBox()->setChecked(true);
               } else if (commandLineOptionValue.compare("NLSanalyticJacobian") == 0) {
                 mpTranslationFlagsWidget->getNLSanalyticJacobianCheckBox()->setChecked(true);
-              } else if (commandLineOptionValue.compare("parmodauto") == 0) {
-                mpTranslationFlagsWidget->getParmodautoCheckBox()->setChecked(true);
               } else if (commandLineOptionValue.compare("newInst") == 0) {
                 mpTranslationFlagsWidget->getOldInstantiationCheckBox()->setChecked(false);
               } else {
@@ -752,6 +769,8 @@ void SimulationDialog::initializeFields(bool isReSimulate, SimulationOptions sim
             mpRootFindingCheckBox->setChecked(false);
           } else if (simulationFlag.compare("single") == 0) {
             mpSinglePrecisionCheckBox->setChecked(true);
+          } else if (simulationFlag.compare("variableFilter") == 0) {
+            mpVariableFilterTextBox->setText(value);
           } else if (simulationFlag.compare("emit_protected") == 0) {
             mpProtectedVariablesCheckBox->setChecked(true);
           } else if (simulationFlag.compare("ignoreHideResult") == 0) {
@@ -805,13 +824,19 @@ void SimulationDialog::initializeFields(bool isReSimulate, SimulationOptions sim
             while (QLayoutItem* pLayoutItem = mpLoggingGroupLayout->itemAt(i)) {
               if (dynamic_cast<QCheckBox*>(pLayoutItem->widget())) {
                 QCheckBox *pLogStreamCheckBox = dynamic_cast<QCheckBox*>(pLayoutItem->widget());
-                if (logStreams.contains(pLogStreamCheckBox->text())) {
-                  pLogStreamCheckBox->setChecked(true);
+                if ((pLogStreamCheckBox->text().compare(QStringLiteral("LOG_STDOUT")) == 0) || (pLogStreamCheckBox->text().compare(QStringLiteral("LOG_ASSERT")) == 0)) {
+                  if (logStreams.contains("-" + pLogStreamCheckBox->text())) {
+                    pLogStreamCheckBox->setChecked(false);
+                  }
+                } else {
+                  if (logStreams.contains(pLogStreamCheckBox->text())) {
+                    pLogStreamCheckBox->setChecked(true);
+                  }
                 }
               }
               i++;
             }
-          } else if (simulationFlag.compare("reconcile") == 0)  {
+          } else if (simulationFlag.compare("reconcileState") == 0)  {
             //do not set the data Reconciliation algorithm from __OpenModelica_simulationFlags, as the users can choose different algorithm from ComboBox
             //mpLibraryTreeItem->mSimulationOptions.setDataReconciliationAlgorithm("dataReconciliation");
           } else if (simulationFlag.compare("reconcileBoundaryConditions") == 0) {
@@ -1084,7 +1109,12 @@ bool SimulationDialog::translateModel(QString simulationParameters)
   }
 #endif
   if (mpLibraryTreeItem->mSimulationOptions.getEnableDataReconciliation()) {
-    MainWindow::instance()->getOMCProxy()->setCommandLineOptions(QString("--preOptModules+=%1").arg(mpLibraryTreeItem->mSimulationOptions.getDataReconciliationAlgorithm()));
+    if (mpLibraryTreeItem->mSimulationOptions.getDataReconciliationAlgorithm().compare(QStringLiteral("dataReconciliationBoundaryConditions")) == 0) {
+      MainWindow::instance()->getOMCProxy()->setCommandLineOptions(QString("--preOptModules+=%1").arg("dataReconciliationBoundaryConditions"));
+    } else {
+      // select dataReconciliationStateEstimation preOptModules for both dataReconciliation and stateEstimation
+      MainWindow::instance()->getOMCProxy()->setCommandLineOptions(QString("--preOptModules+=%1").arg("dataReconciliationStateEstimation"));
+    }
   }
   bool result = MainWindow::instance()->getOMCProxy()->translateModel(mClassName, simulationParameters);
   // reset simulation settings
@@ -1158,7 +1188,9 @@ SimulationOptions SimulationDialog::createSimulationOptions()
   while (QLayoutItem* pLayoutItem = mpLoggingGroupLayout->itemAt(i)) {
     if (dynamic_cast<QCheckBox*>(pLayoutItem->widget())) {
       QCheckBox *pLogStreamCheckBox = dynamic_cast<QCheckBox*>(pLayoutItem->widget());
-      if (pLogStreamCheckBox->isChecked()) {
+      if (!pLogStreamCheckBox->isChecked() && ((pLogStreamCheckBox->text().compare(QStringLiteral("LOG_STDOUT")) == 0) || (pLogStreamCheckBox->text().compare(QStringLiteral("LOG_ASSERT")) == 0))) {
+        logStreams << "-" + pLogStreamCheckBox->text();
+      } else if (pLogStreamCheckBox->isChecked()) {
         logStreams << pLogStreamCheckBox->text();
       }
     }
@@ -1220,15 +1252,21 @@ SimulationOptions SimulationDialog::createSimulationOptions()
   if (!mpJacobianComboBox->currentText().isEmpty()) {
     simulationFlags.append(QString("-jacobian=").append(mpJacobianComboBox->currentText()));
   }
-  // dassl/ida options
-  if (mpDasslIdaOptionsGroupBox->isEnabled()) {
-    // root finding
-    if (!mpRootFindingCheckBox->isChecked()) {
-      simulationFlags.append("-noRootFinding");
-    }
-    // restart after event
-    if (!mpRestartAfterEventCheckBox->isChecked()) {
-      simulationFlags.append("-noRestart");
+  // options
+  if (mpOptionsGroupBox->isEnabled()) {
+    if (simulationOptions.getMethod().compare(QStringLiteral("gbode")) != 0) {
+      // root finding
+      if (!mpRootFindingCheckBox->isChecked()) {
+        simulationFlags.append("-noRootFinding");
+      }
+      // restart after event
+      if (!mpRestartAfterEventCheckBox->isChecked()) {
+        simulationFlags.append("-noRestart");
+      }
+      // max step size
+      if (mpMaxIntegrationOrderSpinBox->value() != 5) {
+        simulationFlags.append(QString("-maxIntegrationOrder=").append(QString::number(mpMaxIntegrationOrderSpinBox->value())));
+      }
     }
     // initial step size
     if (!mpInitialStepSizeTextBox->text().isEmpty()) {
@@ -1237,10 +1275,6 @@ SimulationOptions SimulationDialog::createSimulationOptions()
     // max step size
     if (!mpMaxStepSizeTextBox->text().isEmpty()) {
       simulationFlags.append(QString("-maxStepSize=").append(mpMaxStepSizeTextBox->text()));
-    }
-    // max step size
-    if (mpMaxIntegrationOrderSpinBox->value() != 5) {
-      simulationFlags.append(QString("-maxIntegrationOrder=").append(QString::number(mpMaxIntegrationOrderSpinBox->value())));
     }
   }
   // single precision
@@ -1310,7 +1344,7 @@ SimulationOptions SimulationDialog::createSimulationOptions()
   // setup data reconciliation
   if (simulationOptions.getEnableDataReconciliation()) {
     if (simulationOptions.getDataReconciliationAlgorithm().compare(QStringLiteral("dataReconciliation")) == 0) {
-      simulationFlags.append("-reconcile");
+      simulationFlags.append("-reconcileState");
       if (!simulationOptions.getDataReconciliationMeasurementInputFile().isEmpty()) {
         simulationFlags.append(QString("-sx=%1").arg(simulationOptions.getDataReconciliationMeasurementInputFile()));
       }
@@ -1461,27 +1495,31 @@ void SimulationDialog::saveSimulationFlagsAnnotation()
   QString oldSimulationFlags = QString("annotate=%1").arg(MainWindow::instance()->getOMCProxy()->getSimulationFlagsAnnotation(mpLibraryTreeItem->getNameStructure()));
   // new simulation flags
   QMap<QString, QString> simulationFlags;
-  if (!mpClockComboBox->currentText().isEmpty()) {
-    simulationFlags.insert("clock", mpClockComboBox->currentText());
+
+  // Flags from General tab
+  if (!mpJacobianComboBox->currentText().isEmpty()) {
+    simulationFlags.insert("jacobian", mpJacobianComboBox->currentText());
   }
-  if (mpCPUTimeCheckBox->isChecked()) {
-    simulationFlags.insert("cpu", "()");
+  if (mpOptionsGroupBox->isEnabled()) {
+    if (mpMethodComboBox->currentText().compare(QStringLiteral("gbode")) != 0) {
+      if (!mpRootFindingCheckBox->isChecked()) {
+        simulationFlags.insert("noRootFinding", "()");
+      }
+      if (!mpRestartAfterEventCheckBox->isChecked()) {
+        simulationFlags.insert("noRestart", "()");
+      }
+      if (mpMaxIntegrationOrderSpinBox->value() != 5) {
+        simulationFlags.insert("maxIntegrationOrder", QString::number(mpMaxIntegrationOrderSpinBox->value()));
+      }
+    }
+    if (!mpInitialStepSizeTextBox->text().isEmpty()) {
+      simulationFlags.insert("initialStepSize", mpInitialStepSizeTextBox->text());
+    }
+    if (!mpMaxStepSizeTextBox->text().isEmpty()) {
+      simulationFlags.insert("maxStepSize", mpMaxStepSizeTextBox->text());
+    }
   }
-  if (!mpRestartAfterEventCheckBox->isChecked()) {
-    simulationFlags.insert("noRestart", "()");
-  }
-  if (!mpRootFindingCheckBox->isChecked()) {
-    simulationFlags.insert("noRootFinding", "()");
-  }
-  if ((mpOutputFormatComboBox->currentText().compare("mat") == 0) && mpSinglePrecisionCheckBox->isChecked()) {
-    simulationFlags.insert("single", "()");
-  }
-  if (mpProtectedVariablesCheckBox->isChecked()) {
-    simulationFlags.insert("emit_protected", "()");
-  }
-  if (mpIgnoreHideResultCheckBox->isChecked()) {
-    simulationFlags.insert("ignoreHideResult", "()");
-  }
+  // Flags from Simulation Flags tab
   if (!mpModelSetupFileTextBox->text().isEmpty()) {
     simulationFlags.insert("f", mpModelSetupFileTextBox->text());
   }
@@ -1494,46 +1532,32 @@ void SimulationDialog::saveSimulationFlagsAnnotation()
   if (!mpEquationSystemInitializationTimeTextBox->text().isEmpty()) {
     simulationFlags.insert("iit", mpEquationSystemInitializationTimeTextBox->text());
   }
-  if (!mpInitialStepSizeTextBox->text().isEmpty()) {
-    simulationFlags.insert("initialStepSize", mpInitialStepSizeTextBox->text());
-  }
-  if (!mpJacobianComboBox->currentText().isEmpty()) {
-    simulationFlags.insert("jacobian", mpJacobianComboBox->currentText());
-  }
-  if (!mpLinearizationTimeTextBox->text().isEmpty()) {
-    simulationFlags.insert("l", mpLinearizationTimeTextBox->text());
+  if (!mpClockComboBox->currentText().isEmpty()) {
+    simulationFlags.insert("clock", mpClockComboBox->currentText());
   }
   if (!mpLinearSolverComboBox->currentText().isEmpty()) {
     simulationFlags.insert("ls", mpLinearSolverComboBox->currentText());
   }
-  if (mpMaxIntegrationOrderSpinBox->value() != 5) {
-    simulationFlags.insert("maxIntegrationOrder", QString::number(mpMaxIntegrationOrderSpinBox->value()));
-  }
-  if (!mpMaxStepSizeTextBox->text().isEmpty()) {
-    simulationFlags.insert("maxStepSize", mpMaxStepSizeTextBox->text());
-  }
   if (!mpNonLinearSolverComboBox->currentText().isEmpty()) {
     simulationFlags.insert("nls", mpNonLinearSolverComboBox->currentText());
   }
-  if (mpEquidistantTimeGridCheckBox->isEnabled() && !mpEquidistantTimeGridCheckBox->isChecked()) {
-    simulationFlags.insert("noEquidistantTimeGrid", "()");
-  }
-  if (!mpStoreVariablesAtEventsCheckBox->isChecked()) {
-    simulationFlags.insert("noEventEmit", "()");
+  if (!mpLinearizationTimeTextBox->text().isEmpty()) {
+    simulationFlags.insert("l", mpLinearizationTimeTextBox->text());
   }
   if (!mpOutputVariablesTextBox->text().isEmpty()) {
     simulationFlags.insert("output", mpOutputVariablesTextBox->text());
   }
-  if (!mpResultFileNameTextBox->text().isEmpty()) {
-    simulationFlags.insert("r", mpResultFileNameTextBox->text());
+  if (mpCPUTimeCheckBox->isChecked()) {
+    simulationFlags.insert("cpu", "()");
   }
-  simulationFlags.insert("s", mpMethodComboBox->currentText());
   QStringList logStreams;
   int i = 0;
   while (QLayoutItem* pLayoutItem = mpLoggingGroupLayout->itemAt(i)) {
     if (dynamic_cast<QCheckBox*>(pLayoutItem->widget())) {
       QCheckBox *pLogStreamCheckBox = dynamic_cast<QCheckBox*>(pLayoutItem->widget());
-      if (pLogStreamCheckBox->isChecked()) {
+      if (!pLogStreamCheckBox->isChecked() && ((pLogStreamCheckBox->text().compare(QStringLiteral("LOG_STDOUT")) == 0) || (pLogStreamCheckBox->text().compare(QStringLiteral("LOG_ASSERT")) == 0))) {
+        logStreams << "-" + pLogStreamCheckBox->text();
+      } else if (pLogStreamCheckBox->isChecked()) {
         logStreams << pLogStreamCheckBox->text();
       }
     }
@@ -1563,8 +1587,32 @@ void SimulationDialog::saveSimulationFlagsAnnotation()
       simulationFlags.insert(nameValueList.at(0), nameValueList.at(1));
     }
   }
+  // Flags from Output tab
+  simulationFlags.insert("s", mpMethodComboBox->currentText());
+  if ((mpOutputFormatComboBox->currentText().compare("mat") == 0) && mpSinglePrecisionCheckBox->isChecked()) {
+    simulationFlags.insert("single", "()");
+  }
+  if (!mpResultFileNameTextBox->text().isEmpty()) {
+    simulationFlags.insert("r", mpResultFileNameTextBox->text());
+  }
+  if (!mpVariableFilterTextBox->text().isEmpty()) {
+    simulationFlags.insert("variableFilter", mpVariableFilterTextBox->text());
+  }
+  if (mpProtectedVariablesCheckBox->isChecked()) {
+    simulationFlags.insert("emit_protected", "()");
+  }
+  if (mpIgnoreHideResultCheckBox->isChecked()) {
+    simulationFlags.insert("ignoreHideResult", "()");
+  }
+  if (mpEquidistantTimeGridCheckBox->isEnabled() && !mpEquidistantTimeGridCheckBox->isChecked()) {
+    simulationFlags.insert("noEquidistantTimeGrid", "()");
+  }
+  if (!mpStoreVariablesAtEventsCheckBox->isChecked()) {
+    simulationFlags.insert("noEventEmit", "()");
+  }
+
   if (mpLibraryTreeItem->mSimulationOptions.getDataReconciliationAlgorithm().compare(QStringLiteral("dataReconciliation")) == 0) {
-    simulationFlags.insert("reconcile", "()");
+    simulationFlags.insert("reconcileState", "()");
   }else if (mpLibraryTreeItem->mSimulationOptions.getDataReconciliationAlgorithm().compare(QStringLiteral("dataReconciliationBoundaryConditions")) == 0 ) {
     simulationFlags.insert("reconcileBoundaryConditions", "()");
   }
@@ -2038,18 +2086,23 @@ void SimulationDialog::intervalRadioToggled(bool toggle)
 }
 
 /*!
- * \brief SimulationDialog::enableDasslOptions
+ * \brief SimulationDialog::enableDisableOptions
  * Slot activated when mpMethodComboBox currentIndexChanged signal is raised.\n
- * Enables/disables the Dassl options group box
+ * Enables/disables the options group box
  * \param method
  */
-void SimulationDialog::enableDasslIdaOptions(QString method)
+void SimulationDialog::enableDisableOptions(QString method)
 {
-  if (method.compare("dassl") == 0 || method.compare("ida") == 0) {
-    mpDasslIdaOptionsGroupBox->setEnabled(true);
+  if (method.compare(QStringLiteral("dassl")) == 0 || method.compare(QStringLiteral("ida")) == 0 || method.compare(QStringLiteral("gbode")) == 0) {
+    mpOptionsGroupBox->setEnabled(true);
     mpEquidistantTimeGridCheckBox->setEnabled(true);
+    // gbode doesn't handle following options yet
+    bool isGbode = method.compare(QStringLiteral("gbode")) == 0;
+    mpRootFindingCheckBox->setEnabled(!isGbode);
+    mpRestartAfterEventCheckBox->setEnabled(!isGbode);
+    mpMaxIntegrationOrderSpinBox->setEnabled(!isGbode);
   } else {
-    mpDasslIdaOptionsGroupBox->setEnabled(false);
+    mpOptionsGroupBox->setEnabled(false);
     mpEquidistantTimeGridCheckBox->setEnabled(false);
   }
 }
@@ -2302,7 +2355,7 @@ DataReconciliationDialog::DataReconciliationDialog(LibraryTreeItem *pLibraryTree
       QList<QString> simulationFlags = MainWindow::instance()->getOMCProxy()->getAnnotationNamedModifiers(mpLibraryTreeItem->getNameStructure(), "__OpenModelica_simulationFlags");
       foreach (QString simulationFlag, simulationFlags) {
         QString value = MainWindow::instance()->getOMCProxy()->getAnnotationModifierValue(mpLibraryTreeItem->getNameStructure(), "__OpenModelica_simulationFlags", simulationFlag);
-        if (simulationFlag.compare("reconcile") == 0) {
+        if (simulationFlag.compare("reconcileState") == 0) {
           mpDataReconciliationAlgorithmComboBox->setCurrentIndex(0);
         } else if (simulationFlag.compare("reconcileBoundaryConditions") == 0) {
           mpDataReconciliationAlgorithmComboBox->setCurrentIndex(1);

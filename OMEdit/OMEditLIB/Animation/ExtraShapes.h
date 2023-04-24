@@ -48,6 +48,8 @@
 #include <QTextStream>
 #include <QFile>
 
+#include <unordered_map>
+
 // TODO: Support is missing for the following shape types:
 //  - beam,
 //  - gearwheel.
@@ -55,7 +57,8 @@
 // In addition, the extra parameter is not always considered, in particular for cone and cylinder shapes.
 // See documentation of Modelica.Mechanics.MultiBody.Visualizers.Advanced.Shape model.
 // Also, the spring shape is implemented but has an undesired torsion near the end of each winding,
-// and it should be drawn with more facets for a nicer animation.
+// and it should be drawn with more facets for a nicer animation
+// (moreover, it misses normals and texture coordinates).
 
 class Pipecylinder : public osg::Geometry
 {
@@ -87,9 +90,9 @@ class DXF3dFace
 public:
   DXF3dFace();
   ~DXF3dFace();
-  QString fill3dFace(QTextStream* stream);
   void dumpDXF3DFace();
-  osg::Vec3f calcNormals();
+  QString fill3dFace(QTextStream* stream);
+  osg::Vec3f calcNormal();
 
 public:
   osg::Vec3 vec1;
@@ -103,16 +106,43 @@ public:
 
 class DXFile : public osg::Geometry
 {
- public:
-    /*-----------------------------------------
-     * CONSTRUCTORS
-     *---------------------------------------*/
-   DXFile(std::string filename);
-     ~DXFile() = default;
-
-  //members
 public:
-    std::string fileName;
+  DXFile(std::string filename);
+  ~DXFile() = default;
+
+public:
+  std::string fileName;
+};
+
+template<typename T>
+struct std::hash<const osg::ref_ptr<T>> {
+  std::size_t operator()(const osg::ref_ptr<T>& ref) const {
+    return reinterpret_cast<std::uintptr_t>(ref.get());
+  }
+};
+
+class CADFile : public osg::Group
+{
+public:
+  CADFile(osg::Node* subgraph);
+  ~CADFile() = default;
+  void scaleVertices(osg::Geode& geode, bool scaling, float scaleX, float scaleY, float scaleZ);
+
+private:
+  std::unordered_map<const osg::ref_ptr<osg::Geometry>, osg::ref_ptr<osg::Vec3Array>> unscaledGeometryVertices;
+
+  friend class CADVisitor;
+};
+
+class CADVisitor : public osg::NodeVisitor
+{
+public:
+  CADVisitor(CADFile* cadFile);
+  ~CADVisitor() {cadFile.release();}
+  void apply(osg::Geode& geode) override;
+
+private:
+  osg::ref_ptr<CADFile> cadFile;
 };
 
 #endif //end EXTRASHAPES_H

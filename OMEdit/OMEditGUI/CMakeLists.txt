@@ -1,7 +1,22 @@
 
 
-add_executable(OMEdit WIN32 MACOSX_BUNDLE main.cpp rc_omedit.rc)
+if(APPLE)
+  set(MACOSX_BUNDLE_ICON_FILE omedit.icns)
+
+  # The following tells CMake where to find and install the file itself.
+  set(app_icon_macos "${CMAKE_CURRENT_SOURCE_DIR}/../OMEditLIB/Resources/icons/omedit.icns")
+  set_source_files_properties(${app_icon_macos} PROPERTIES
+       MACOSX_PACKAGE_LOCATION "Resources")
+else()
+  set(app_icon_macos "")
+endif()
+
+add_executable(OMEdit WIN32 MACOSX_BUNDLE main.cpp rc_omedit.rc ${app_icon_macos})
 target_link_libraries(OMEdit PRIVATE OMEditLib)
+
+if(APPLE)
+  set_target_properties(OMEdit PROPERTIES MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist)
+endif()
 
 install(TARGETS OMEdit
         BUNDLE DESTINATION ${OM_MACOS_INSTALL_BUNDLEDIR})
@@ -11,7 +26,10 @@ install(TARGETS OMEdit
 if(OM_OMEDIT_INSTALL_RUNTIME_DLLS AND MINGW)
 
   # Escape the environment variable path
-  string(REPLACE "\\" "/" OMDEV_ESCAPED $ENV{OMDev})
+  if(NOT DEFINED ENV{OMDEV})
+    message(FATAL_ERROR "Environment variable \"OMDEV\" is not set.")
+  endif()
+  string(REPLACE "\\" "/" OMDEV_ESCAPED "$ENV{OMDEV}")
 
   # Check if 64 bit
   if(CMAKE_SIZEOF_VOID_P EQUAL 8)

@@ -79,6 +79,7 @@ import Component = NFComponent;
 import InstContext = NFInstContext;
 import NFInstNode.InstNodeType;
 import Array;
+import Inline = NFInline;
 
 public
 type MatchKind = enumeration(
@@ -172,10 +173,10 @@ algorithm
       case Op.POW_EW then checkBinaryOperationPowEW(exp1, type1, exp2, type2, info);
       // These operators should not occur in untyped expressions, but sometimes
       // we want to retype already typed expressions due to changes in them.
-      case Op.ADD_SCALAR_ARRAY then checkBinaryOperationAdd(exp1, type1, exp2, type2, info);
-      case Op.ADD_ARRAY_SCALAR then checkBinaryOperationAdd(exp1, type1, exp2, type2, info);
-      case Op.SUB_SCALAR_ARRAY then checkBinaryOperationSub(exp1, type1, exp2, type2, info);
-      case Op.SUB_ARRAY_SCALAR then checkBinaryOperationSub(exp1, type1, exp2, type2, info);
+      case Op.ADD_SCALAR_ARRAY then checkBinaryOperationEW(exp1, type1, exp2, type2, Op.ADD, info);
+      case Op.ADD_ARRAY_SCALAR then checkBinaryOperationEW(exp1, type1, exp2, type2, Op.ADD, info);
+      case Op.SUB_SCALAR_ARRAY then checkBinaryOperationEW(exp1, type1, exp2, type2, Op.SUB, info);
+      case Op.SUB_ARRAY_SCALAR then checkBinaryOperationEW(exp1, type1, exp2, type2, Op.SUB, info);
       case Op.MUL_SCALAR_ARRAY  then checkBinaryOperationMul(exp1, type1, exp2, type2, info);
       case Op.MUL_ARRAY_SCALAR  then checkBinaryOperationMul(exp1, type1, exp2, type2, info);
       case Op.MUL_VECTOR_MATRIX then checkBinaryOperationMul(exp1, type1, exp2, type2, info);
@@ -230,6 +231,8 @@ algorithm
     (outExp, outType) := matchOverloadedBinaryOperator(
       exp1, type1, var1, op, exp2, type2, var2, candidates, info);
   end if;
+
+  outExp := Inline.inlineCallExp(outExp);
 end checkOverloadedBinaryOperator;
 
 function matchOverloadedBinaryOperator
@@ -1345,6 +1348,8 @@ algorithm
        Function.candidateFuncListString(list(mfn.func for mfn in matchedFunctions))}, info);
     fail();
   end if;
+
+  outExp := Inline.inlineCallExp(outExp);
 end checkOverloadedUnaryOperator;
 
 function checkLogicalBinaryOperation
@@ -2507,6 +2512,12 @@ algorithm
       algorithm
         matchKind := if Type.isScalar(actualType) and Expression.isComponentExpression(exp) then
           MatchKind.GENERIC else MatchKind.NOT_COMPATIBLE;
+      then
+        (actualType, matchKind);
+
+    case "__Block"
+      algorithm
+        matchKind := if Type.isComplex(actualType) then MatchKind.GENERIC else MatchKind.NOT_COMPATIBLE;
       then
         (actualType, matchKind);
 

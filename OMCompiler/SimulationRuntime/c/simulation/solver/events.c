@@ -100,7 +100,7 @@ int checkForStateEvent(DATA* data, LIST *eventList)
   {
     int *eq_indexes;
     const char *exp_str = data->callback->zeroCrossingDescription(i,&eq_indexes);
-    debugStreamPrintWithEquationIndexes(LOG_EVENTS, 1, eq_indexes, "%s", exp_str);
+    debugStreamPrintWithEquationIndexes(LOG_EVENTS, omc_dummyFileInfo, 1, eq_indexes, "%s", exp_str);
 
     if(sign(data->simulationInfo->zeroCrossings[i]) != sign(data->simulationInfo->zeroCrossingsPre[i]))
     {
@@ -211,7 +211,7 @@ void handleEvents(DATA* data, threadData_t *threadData, LIST* eventLst, double *
         long ix = *((long*) listNodeData(it));
         int *eq_indexes;
         const char *exp_str = data->callback->zeroCrossingDescription(ix,&eq_indexes);
-        infoStreamPrintWithEquationIndexes(LOG_EVENTS, 0, eq_indexes, "[%ld] %s", ix+1, exp_str);
+        infoStreamPrintWithEquationIndexes(LOG_EVENTS, omc_dummyFileInfo, 0, eq_indexes, "[%ld] %s", ix+1, exp_str);
       }
     }
 
@@ -230,11 +230,11 @@ void handleEvents(DATA* data, threadData_t *threadData, LIST* eventLst, double *
         long ix = *((long*) listNodeData(listFirstNode(eventLst)));
         int *eq_indexes;
         const char *exp_str = data->callback->zeroCrossingDescription(ix,&eq_indexes);
-        infoStreamPrintWithEquationIndexes(LOG_STDOUT, 0, eq_indexes, "Chattering detected around time %.12g..%.12g (%d state events in a row with a total time delta less than the step size %.12g). This can be a performance bottleneck. Use -lv LOG_EVENTS for more information. The zero-crossing was: %s", t0, time, numEventLimit, data->simulationInfo->stepSize, exp_str);
+        infoStreamPrintWithEquationIndexes(LOG_STDOUT, omc_dummyFileInfo, 0, eq_indexes, "Chattering detected around time %.12g..%.12g (%d state events in a row with a total time delta less than the step size %.12g). This can be a performance bottleneck. Use -lv LOG_EVENTS for more information. The zero-crossing was: %s", t0, time, numEventLimit, data->simulationInfo->stepSize, exp_str);
         data->simulationInfo->chatteringInfo.messageEmitted = 1;
         if (omc_flag[FLAG_ABORT_SLOW])
         {
-          throwStreamPrintWithEquationIndexes(threadData, eq_indexes, "Aborting simulation due to chattering being detected and the simulation flags requesting we do not continue further.");
+          throwStreamPrintWithEquationIndexes(threadData, omc_dummyFileInfo, eq_indexes, "Aborting simulation due to chattering being detected and the simulation flags requesting we do not continue further.");
         }
       }
     }
@@ -295,23 +295,12 @@ double findRoot(DATA* data, threadData_t* threadData, LIST* eventList, double ti
 
   LIST_NODE* it;
   fortran_integer i=0;
-  LIST tmpEventList = (LIST){NULL, NULL, sizeof(long), 0};
+  LIST *tmpEventList = allocList(eventListAlloc, eventListFree, eventListCopy);
 
   /* static work arrays */
-  static double *states_left = NULL;
-  static double *states_right = NULL;
+  double *states_left = data->simulationInfo->states_left;
+  double *states_right = data->simulationInfo->states_right;
 
-  /* allocate memory once at first call, never free */
-  if(!states_left)
-  {
-    states_left = (double*) malloc(data->modelData->nStates * sizeof(double));
-    assertStreamPrint(NULL, NULL != states_left, "out of memory");
-  }
-  if(!states_right)
-  {
-    states_right = (double*) malloc(data->modelData->nStates * sizeof(double));
-    assertStreamPrint(NULL, NULL != states_right, "out of memory");
-  }
 
   /* write states to work arrays */
   memcpy(states_left,  values_left,  data->modelData->nStates * sizeof(double));
@@ -323,10 +312,10 @@ double findRoot(DATA* data, threadData_t* threadData, LIST* eventList, double ti
   }
 
   /* Search for event time and event_id with bisection method */
-  bisection(data, threadData, &time_left, &time_right, states_left, states_right, &tmpEventList, eventList);
+  bisection(data, threadData, &time_left, &time_right, states_left, states_right, tmpEventList, eventList);
 
   /* what happens here? */
-  if(listLen(&tmpEventList) == 0)
+  if(listLen(tmpEventList) == 0)
   {
     double value = fabs(data->simulationInfo->zeroCrossings[*((long*) listFirstData(eventList))]);
     for(it = listFirstNode(eventList); it; it = listNextNode(it))
@@ -342,7 +331,7 @@ double findRoot(DATA* data, threadData_t* threadData, LIST* eventList, double ti
     {
       if(value == fabs(data->simulationInfo->zeroCrossings[*((long*) listNodeData(it))]))
       {
-        listPushBack(&tmpEventList, listNodeData(it));
+        listPushBack(tmpEventList, listNodeData(it));
         infoStreamPrint(LOG_ZEROCROSSINGS, 0, "added tmp event : %ld", *((long*) listNodeData(it)));
       }
     }
@@ -350,11 +339,11 @@ double findRoot(DATA* data, threadData_t* threadData, LIST* eventList, double ti
 
   listClear(eventList);
 
-  debugStreamPrint(LOG_EVENTS, 0, (listLen(&tmpEventList) == 1) ? "found event: " : "found events: ");
-  while(listLen(&tmpEventList) > 0)
+  debugStreamPrint(LOG_EVENTS, 0, (listLen(tmpEventList) == 1) ? "found event: " : "found events: ");
+  while(listLen(tmpEventList) > 0)
   {
-    long event_id = *((long*)listFirstData(&tmpEventList));
-    listPushFrontNodeNoCopy(eventList, listPopFrontNode(&tmpEventList));
+    long event_id = *((long*)listFirstData(tmpEventList));
+    listPushFrontNodeNoCopy(eventList, listPopFrontNode(tmpEventList));
     infoStreamPrint(LOG_ZEROCROSSINGS, 0, "Event id: %ld", event_id);
   }
 
@@ -370,6 +359,8 @@ double findRoot(DATA* data, threadData_t* threadData, LIST* eventList, double ti
 
   data->localData[0]->timeValue = time_right;
   memcpy(data->localData[0]->realVars, states_right, data->modelData->nStates * sizeof(double));
+
+  freeList(tmpEventList);
 
   TRACE_POP
   return time_right;
@@ -503,6 +494,37 @@ void saveZeroCrossingsAfterEvent(DATA *data, threadData_t *threadData)
   TRACE_POP
 }
 
+/**
+ * @brief Allocate memory for eventList elements.
+ *
+ * @param data      Unused.
+ * @return void*    Allocated memory for LIST_NODE data.
+ */
+void* eventListAlloc(const void* data) {
+  void* newElem = malloc(sizeof(long));
+  assertStreamPrint(NULL, newElem != NULL, "eventListAlloc: Out of memory");
+  return newElem;
+}
+
+/**
+ * @brief Free memory allocated with eventListAlloc.
+ *
+ * @param data      Void pointer, representing index for new list element.
+ */
+void eventListFree(void* data) {
+  free(data);
+}
+
+/**
+ * @brief Copy data of eventList elements.
+ *
+ * @param dest    Void pointer of destination data, representing long index.
+ * @param src     Void pointer of source data, representing long index.
+ */
+void eventListCopy(void* dest, const void* src) {
+  long* dest_event = (long*) dest;
+  *dest_event = *((long*) src);
+}
 
 #ifdef __cplusplus
 }

@@ -40,46 +40,12 @@
 
 void dumOptions(const char* flagName, const char* flagValue, const char** argsArr, unsigned int maxArgs);
 
-const char *GB_CTRL_METHOD_NAME[GB_CTRL_MAX] = {
-  /* GB_CTRL_UNKNOWN */   "unknown",
-  /* GB_CTRL_I */         "i",
-  /* GB_CTRL_PI */        "pi",
-  /* GB_CTRL_CNST */      "const"
-};
-
-const char *GB_CTRL_METHOD_DESC[GB_CTRL_MAX] = {
-  /* GB_CTRL_UNKNOWN */   "unknown",
-  /* GB_CTRL_I */         "I controller for step size",
-  /* GB_CTRL_PI */        "PI controller for step size",
-  /* GB_CTRL_CNST */      "Constant step size"
-};
-
-const char *GB_INTERPOL_METHOD_NAME[GB_INTERPOL_MAX] = {
-  /* GB_INTERPOL_UNKNOWN */           "unknown",
-  /* GB_INTERPOL_LIN */               "linear",
-  /* GB_INTERPOL_HERMITE */           "hermite",
-  /* GB_INTERPOL_HERMITE_b */         "hermite_b",
-  /* GB_INTERPOL_HERMITE_ERRCTRL */   "hermite_errctrl",
-  /* GB_DENSE_OUTPUT */               "dense_output",
-  /* GB_DENSE_OUTPUT_ERRCTRL */       "dense_output_errctrl"
-};
-
-const char *GB_INTERPOL_METHOD_DESC[GB_INTERPOL_MAX] = {
-  /* GB_INTERPOL_UNKNOWN */         "unknown",
-  /* GB_INTERPOL_LIN */             "Linear interpolation (1st order)",
-  /* GB_INTERPOL_HERMITE */         "Hermite interpolation (3rd order)",
-  /* GB_INTERPOL_HERMITE_b */       "Hermite interpolation (only for left hand side)",
-  /* GB_INTERPOL_HERMITE_ERRCTRL */ "Hermite interpolation with error control",
-  /* GB_DENSE_OUTPUT */             "use dense output formula for interpolation",
-  /* GB_DENSE_OUTPUT_ERRCTRL */     "use dense output fomular with error control"
-};
-
 /**
  * @brief Get Runge-Kutta method from simulation flag FLAG_SR or FLAG_MR.
  *
- * Defaults to method RK_LOBA_IIIB_4 for single-rate.
+ * Defaults to method RK_ESDIRK4 for single-rate.
  *
- * Defaults to method RK_SDIRK2 for multi-rate method, if single-rate method is implicit.
+ * Defaults to method RK_ESDIRK4 for multi-rate method, if single-rate method is implicit.
  * Otherwise us same method as single-rate method.
  *
  * Returns GB_UNKNOWN if flag is not known.
@@ -131,15 +97,15 @@ enum GB_METHOD getGB_method(enum _FLAG flag) {
     case RK_LOBA_IIIC_4:
       // Default value for inner integration method
       // if the outer integration method is full implicit
-      return RK_ESDIRK3;
+      return RK_ESDIRK4;
     default:
       return singleRateMethod;
     }
   }
 
   // Default value for single-rate method
-  infoStreamPrint(LOG_SOLVER, 0, "Chosen gbode method: esdirk3 [default]");
-  return RK_ESDIRK3;
+  infoStreamPrint(LOG_SOLVER, 0, "Chosen gbode method: esdirk4 [default]");
+  return RK_ESDIRK4;
 }
 
 /**
@@ -210,7 +176,13 @@ enum GB_CTRL_METHOD getControllerMethod(enum _FLAG flag) {
     dumOptions(FLAG_NAME[flag], flag_value, GB_CTRL_METHOD_NAME, GB_CTRL_MAX);
     return GB_CTRL_UNKNOWN;
   } else {
-    return GB_CTRL_I;
+    // Default value
+    if (flag == FLAG_MR_CTRL) {
+      return getControllerMethod(FLAG_SR_CTRL);
+    } else {
+      infoStreamPrint(LOG_SOLVER, 0, "Chosen gbode step size control: i [default]");
+      return GB_CTRL_I;
+    }
   }
 }
 
@@ -239,7 +211,7 @@ enum GB_INTERPOL_METHOD getInterpolationMethod(enum _FLAG flag) {
       if (strcmp(flag_value, GB_INTERPOL_METHOD_NAME[method]) == 0) {
         if (flag == FLAG_MR_INT && (method == GB_INTERPOL_HERMITE_ERRCTRL || method == GB_DENSE_OUTPUT_ERRCTRL)) {
           warningStreamPrint(LOG_SOLVER, 0, "Chosen gbode interpolation method %s not supported for fast state integration", GB_INTERPOL_METHOD_NAME[method]);
-          method = GB_INTERPOL_HERMITE;
+          method = GB_DENSE_OUTPUT;
         }
         infoStreamPrint(LOG_SOLVER, 0, "Chosen gbode interpolation method: %s", GB_INTERPOL_METHOD_NAME[method]);
         return method;
@@ -248,7 +220,19 @@ enum GB_INTERPOL_METHOD getInterpolationMethod(enum _FLAG flag) {
     dumOptions(FLAG_NAME[flag], flag_value, GB_INTERPOL_METHOD_NAME, GB_INTERPOL_MAX);
     return GB_INTERPOL_UNKNOWN;
   } else {
-    return GB_INTERPOL_HERMITE;
+    // Default value
+    if (flag == FLAG_MR_INT) {
+      method = getInterpolationMethod(FLAG_SR_INT);
+      if (method == GB_INTERPOL_HERMITE_ERRCTRL || method == GB_DENSE_OUTPUT_ERRCTRL) {
+        warningStreamPrint(LOG_SOLVER, 0, "Chosen gbode interpolation method %s not supported for fast state integration", GB_INTERPOL_METHOD_NAME[method]);
+        infoStreamPrint(LOG_SOLVER, 0, "Chosen gbode interpolation method: dense_output [default]");
+        method = GB_DENSE_OUTPUT;
+      }
+      return method;
+    } else {
+      infoStreamPrint(LOG_SOLVER, 0, "Chosen gbode interpolation method: dense_output [default]");
+      return GB_DENSE_OUTPUT;
+    }
   }
 }
 
@@ -273,6 +257,44 @@ double getGBRatio() {
     percentage = 0;
   }
   return percentage;
+}
+
+/**
+ * @brief Get extrapolation method from user flag.
+ *
+ * Reads flag FLAG_SR_ERR, FLAG_MR_ERR.
+ * Defaults to GB_EXT_DEFAULT.
+ *
+ * @param flag                      Flag specifying error estimation.
+ *                                  Allowed values: FLAG_SR_ERR, FLAG_MR_ERR
+ * @return enum GB_EXTRAPOL_METHOD  Extrapolation method.
+ */
+enum GB_EXTRAPOL_METHOD getGBErr(enum _FLAG flag) {
+  assertStreamPrint(NULL, flag==FLAG_SR_ERR || flag==FLAG_MR_ERR, "Illegal input 'flag' to getGBErr!");
+
+  enum GB_EXTRAPOL_METHOD extrapolationMethod;
+  const char *flag_value = omc_flagValue[flag];
+
+  if (flag_value != NULL) {
+    if (strcmp(flag_value, "default")==0) {
+      extrapolationMethod = GB_EXT_DEFAULT;
+    } else if (strcmp(flag_value, "richardson")==0) {
+      extrapolationMethod = GB_EXT_RICHARDSON;
+    } else if (strcmp(flag_value, "embedded")==0) {
+      extrapolationMethod = GB_EXT_EMBEDDED;
+    } else {
+      errorStreamPrint(LOG_STDOUT, 0, "Illegal value '%s' for flag -%s", flag_value, FLAG_NAME[flag]);
+      infoStreamPrint(LOG_STDOUT, 1, "Allowed values are:");
+      infoStreamPrint(LOG_STDOUT, 0, "default");
+      infoStreamPrint(LOG_STDOUT, 0, "richardson");
+      infoStreamPrint(LOG_STDOUT, 0, "embedded");
+      messageClose(LOG_STDOUT);
+      omc_throw(NULL);
+    }
+  } else {
+    extrapolationMethod = GB_EXT_DEFAULT;
+  }
+  return extrapolationMethod;
 }
 
 /**

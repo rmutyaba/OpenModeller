@@ -332,7 +332,7 @@ protected function addLabelToEquations
       SimCodeVar.SimVars vars,vars_1,vars_2,vars_3;
       list<String> labels,labels2,labels3,labels4,labels5;
       tuple <Integer,Integer> idx,idx2,idx3,idx4;
-      Integer i,indexSys,idxLS,idxNLS,nUnknownsLS,nUnknownsNLS;
+      Integer i,res_i,indexSys,idxLS,idxNLS,nUnknownsLS,nUnknownsNLS;
       list<DAE.ComponentRef> conditions;
       Boolean partOfLinear,tornSystem,initialCall;
       list<BackendDAE.WhenOperator> whenStmtLst;
@@ -349,7 +349,7 @@ protected function addLabelToEquations
     // nothing
     case ({},vars,idx,_,_) then ({},vars,idx,{});
     // residuals
-    case (((eq as SimCode.SES_RESIDUAL(i,e,source, eqAttr)) :: es),vars,idx,_,_)
+    case (((eq as SimCode.SES_RESIDUAL(i,res_i,e,source, eqAttr)) :: es),vars,idx,_,_)
       equation
 
         if(Flags.isSet(Flags.REDUCE_DAE)) then
@@ -364,7 +364,7 @@ protected function addLabelToEquations
         (es_1 ,vars_2,idx3,labels2)= addLabelToEquations(es,vars_1,idx2,reduceList,inVarRepl);
         labels3=listAppend(labels,labels2);
       then
-        (SimCode.SES_RESIDUAL(i,e2,source, eqAttr) :: es_1,vars_2,idx3,labels3);
+        (SimCode.SES_RESIDUAL(i,res_i,e2,source, eqAttr) :: es_1,vars_2,idx3,labels3);
     // simple assignments
     case (((eq as SimCode.SES_SIMPLE_ASSIGN(i,cr,e,source, eqAttr)) :: es),vars,idx,_,_)
       equation
@@ -2174,14 +2174,14 @@ algorithm
     local
      list<SimCodeVar.SimVar> states,derVar,alg,disAlg,intAlg,boolAlg,inVar,outVar,algAlias,intAlias,boolAlias,param,
                           intParam,boolParam,stringAlg,stringParam,stringAlias,extObjVar,const,intConst,boolConst,stringConst,jacobianVar,
-              seedVar,realOptConst,realOptFinalConst,sensVar,setcVar,datareconinputvar;
+              seedVar,realOptConst,realOptFinalConst,sensVar,setcVar,datareconinputvar,setBVar;
      SimCodeVar.SimVar simVar_1,simVar_2;
      list<SimCodeVar.SimVar> param_1,param_2;
      Integer i,p;
      String name, name1, name2, indexStr;
     case (SimCodeVar.SIMVARS(states,derVar,alg,disAlg,intAlg,boolAlg,inVar,outVar,algAlias,intAlias,boolAlias,param,
                            intParam,boolParam,stringAlg,stringParam,stringAlias,extObjVar,const,intConst,boolConst,stringConst,jacobianVar,
-               seedVar,realOptConst,realOptFinalConst,sensVar,setcVar,datareconinputvar),p,i)
+               seedVar,realOptConst,realOptFinalConst,sensVar,setcVar,datareconinputvar,setBVar),p,i)
 
       equation
         indexStr = intString(i);
@@ -2191,14 +2191,14 @@ algorithm
         //create simVar for label_1
 
         simVar_1 = SimCodeVar.SIMVAR(DAE.CREF_IDENT(name1,DAE.T_REAL_DEFAULT,{}),BackendDAE.PARAM(),"","","",p,NONE(),NONE(),SOME(DAE.RCONST(1.0)),NONE(),
-                   true,DAE.T_REAL_DEFAULT,false,NONE(),SimCodeVar.NOALIAS(),DAE.emptyElementSource,SOME(SimCodeVar.LOCAL()),NONE(),NONE(),{},false,false,NONE(),NONE(),NONE(),NONE(),NONE(),NONE());
+                   true,DAE.T_REAL_DEFAULT,false,NONE(),SimCodeVar.NOALIAS(),DAE.emptyElementSource,SOME(SimCodeVar.LOCAL()),NONE(),NONE(),{},false,false,NONE(),NONE(),false,NONE(),NONE(),NONE(),NONE());
         param=listReverse(param);
         //add simVar_1 to parameter list
         param_1=simVar_1::param;
         p=p+1;
         //create simVar_2 to parameter list
         simVar_2 = SimCodeVar.SIMVAR(DAE.CREF_IDENT(name2,DAE.T_REAL_DEFAULT,{}),BackendDAE.PARAM(),"","","",p,NONE(),NONE(),SOME(DAE.RCONST(0.0)),NONE(),
-                   true,DAE.T_REAL_DEFAULT,false,NONE(),SimCodeVar.NOALIAS(),DAE.emptyElementSource,SOME(SimCodeVar.LOCAL()),NONE(),NONE(),{},false,false,NONE(),NONE(),NONE(),NONE(),NONE(),NONE());
+                   true,DAE.T_REAL_DEFAULT,false,NONE(),SimCodeVar.NOALIAS(),DAE.emptyElementSource,SOME(SimCodeVar.LOCAL()),NONE(),NONE(),{},false,false,NONE(),NONE(),false,NONE(),NONE(),NONE(),NONE());
         //add simVar_2 to parameter list
         param_2=simVar_2::param_1;
         param_2=listReverse(param_2);
@@ -2207,7 +2207,7 @@ algorithm
 
         (SimCodeVar.SIMVARS(states,derVar,alg,disAlg,intAlg,boolAlg,inVar,outVar,algAlias,intAlias,boolAlias,param_2,
                            intParam,boolParam,stringAlg,stringParam,stringAlias,extObjVar,const,intConst,boolConst,stringConst,jacobianVar,
-               seedVar,realOptConst,realOptFinalConst,sensVar,setcVar,datareconinputvar),name);
+               seedVar,realOptConst,realOptFinalConst,sensVar,setcVar,datareconinputvar,setBVar),name);
 
   end matchcontinue;
 end createLabelVar;
@@ -2298,7 +2298,7 @@ algorithm
        var1 = BackendDAE.VAR(DAE.CREF_IDENT(name1,DAE.T_REAL_DEFAULT,{}), BackendDAE.PARAM(),DAE.BIDIR(),DAE.NON_PARALLEL(),DAE.T_REAL_DEFAULT,NONE(),SOME(DAE.RCONST(1.0)),{},
                             DAE.emptyElementSource,
                             SOME(DAE.VAR_ATTR_REAL(NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE())),
-                            NONE(),NONE(),NONE(),DAE.NON_CONNECTOR(),DAE.NOT_INNER_OUTER(),false);
+                            NONE(),NONE(),NONE(),DAE.NON_CONNECTOR(),DAE.NOT_INNER_OUTER(),false,false);
 
       p=p+1;
 
@@ -2307,7 +2307,7 @@ algorithm
       var2 = BackendDAE.VAR(DAE.CREF_IDENT(name2,DAE.T_REAL_DEFAULT,{}), BackendDAE.PARAM(),DAE.BIDIR(),DAE.NON_PARALLEL(),DAE.T_REAL_DEFAULT,NONE(),SOME(DAE.RCONST(0.0)),{},
                             DAE.emptyElementSource,
                             SOME(DAE.VAR_ATTR_REAL(NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE())),
-                            NONE(),NONE(),NONE(),DAE.NON_CONNECTOR(),DAE.NOT_INNER_OUTER(),false);
+                            NONE(),NONE(),NONE(),DAE.NON_CONNECTOR(),DAE.NOT_INNER_OUTER(),false,false);
 
       list1={var1,var2};
       p=p+1;

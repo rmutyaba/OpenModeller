@@ -32,7 +32,6 @@
 encapsulated package Obfuscate
   import Absyn;
   import AbsynUtil;
-  import DAE;
   import Dump;
   import FBuiltin;
   import SCode;
@@ -81,7 +80,7 @@ encapsulated package Obfuscate
   algorithm
     // The mapping table is used to keep track of which obfuscated name each
     // original name is mapped to.
-    mapping := UnorderedMap.new<String>(stringHashDjb2Mod, stringEqual);
+    mapping := UnorderedMap.new<String>(stringHashDjb2, stringEqual);
     // We don't want to obfuscate builtin names, so we keep track of them in a
     // separate table.
     builtins := makeBuiltins();
@@ -103,7 +102,7 @@ encapsulated package Obfuscate
     SCode.Program builtin_scode;
     ElementType etype;
   algorithm
-    builtins := UnorderedMap.new<ElementType>(stringHashDjb2Mod, stringEqual);
+    builtins := UnorderedMap.new<ElementType>(stringHashDjb2, stringEqual);
 
     (_, builtin_scode) := FBuiltin.getInitialFunctions();
 
@@ -1015,10 +1014,6 @@ encapsulated package Obfuscate
     ety := UnorderedMap.getOrDefault(name, env.builtins, ElementType.OTHER);
     res := ety == ElementType.FUNCTION or ety == ElementType.TYPE_AND_FUNCTION;
   end isBuiltinCall;
-
-  function deobfuscatePublicDAEVars
-
-  end deobfuscatePublicDAEVars;
 
   annotation(__OpenModelica_Interface="backend");
 end Obfuscate;

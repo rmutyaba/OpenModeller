@@ -65,16 +65,16 @@ template translateModel(SimCode simCode)
         let()= textFile(simulationJacobianCppFile(simCode, &extraFuncs, &extraFuncsDecl, "", &jacobianVarsInit, stateDerVectorName, false), 'OMCpp<%fileNamePrefix%>Jacobian.cpp')
         let()= textFile(simulationStateSelectionCppFile(simCode, &extraFuncs, &extraFuncsDecl, "", stateDerVectorName, false), 'OMCpp<%fileNamePrefix%>StateSelection.cpp')
         let()= textFile(simulationStateSelectionHeaderFile(simCode, &extraFuncs, &extraFuncsDecl, ""), 'OMCpp<%fileNamePrefix%>StateSelection.h')
-        let()= textFile(simulationMixedSystemCppFile(simCode, updateResiduals(simCode, extraFuncs, extraResidualsFuncsDecl, className, stateDerVectorName /*=__zDot*/, false),
+        let()= textFile(simulationMixedSystemCppFile(simCode, updateResiduals(simCode, extraResidualsFuncsDecl, className, stateDerVectorName /*=__zDot*/, false),
                                                      &extraFuncs, &extraFuncsDecl, "", stateDerVectorName, false), 'OMCpp<%fileNamePrefix%>Mixed.cpp')
-        let()= textFile(simulationMixedSystemHeaderFile(simCode, &extraFuncs, &extraResidualsFuncsDecl, ""), 'OMCpp<%fileNamePrefix%>Mixed.h')
+        let()= textFile(simulationMixedSystemHeaderFile(simCode, &extraResidualsFuncsDecl), 'OMCpp<%fileNamePrefix%>Mixed.h')
 
         let()= textFile(simulationWriteOutputCppFile(simCode, &extraFuncs, &extraFuncsDecl, "", stateDerVectorName, false), 'OMCpp<%fileNamePrefix%>WriteOutput.cpp')
         let()= textFile(simulationWriteOutputHeaderFile(simCode, &extraFuncs, &extraFuncsDecl, ""), 'OMCpp<%fileNamePrefix%>WriteOutput.h')
         let()= textFile(simulationFactoryFile(simCode, &extraFuncs, &extraFuncsDecl, ""),'OMCpp<%fileNamePrefix%>FactoryExport.cpp')
         let()= textFile(simulationMainRunScript(simCode, &extraFuncs, &extraFuncsDecl, "", "", "", "exec"), '<%fileNamePrefix%><%simulationMainRunScriptSuffix(simCode, &extraFuncs, &extraFuncsDecl, "")%>')
 
-        let jac = (jacobianMatrixes |> JAC_MATRIX(columns=mat, partitionIndex=partIdx) =>
+        let jac = (jacobianMatrices |> JAC_MATRIX(columns=mat, partitionIndex=partIdx) =>
           (mat |> JAC_COLUMN(columnEqns=eqs) => algloopfiles(eqs, simCode, &extraFuncs, &extraFuncsDecl, "", contextAlgloopJacobian, partIdx, stateDerVectorName, false) ;separator="")
          ;separator="")
         let alg = algloopfiles(listAppend(allEquations, initialEquations), simCode, &extraFuncs, &extraFuncsDecl, "", contextAlgloop, 0, stateDerVectorName, false)
@@ -242,7 +242,7 @@ case SIMCODE(modelInfo=MODELINFO(__)) then
 
   class <%lastIdentOfPath(modelInfo.name)%>Jacobian : public <%lastIdentOfPath(modelInfo.name)%>
   {
-  <% (jacobianMatrixes |> JAC_MATRIX(columns=mat) hasindex index0 =>
+  <% (jacobianMatrices |> JAC_MATRIX(columns=mat) hasindex index0 =>
        (mat |> JAC_COLUMN(columnEqns=eqs) => generatefriendAlgloops(eqs, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace) ;separator="\n")
      ;separator="")
   %>
@@ -254,7 +254,7 @@ case SIMCODE(modelInfo=MODELINFO(__)) then
   protected:
     void initialize();
     <%
-    let jacobianfunctions = (jacobianMatrixes |> JAC_MATRIX(matrixName=name) hasindex index0 =>
+    let jacobianfunctions = (jacobianMatrices |> JAC_MATRIX(matrixName=name) hasindex index0 =>
     <<
 
     void calc<%name%>JacobianColumn();
@@ -266,7 +266,7 @@ case SIMCODE(modelInfo=MODELINFO(__)) then
     >>
     %>
     <%
-    let jacobianvars = (jacobianMatrixes |> JAC_MATRIX(matrixName=name) hasindex index0 =>
+    let jacobianvars = (jacobianMatrices |> JAC_MATRIX(matrixName=name) hasindex index0 =>
       <<
 
       <%matrixreturntype%> _<%name%>jacobian;
@@ -290,7 +290,7 @@ case SIMCODE(modelInfo=MODELINFO(__)) then
     >>
     %>
 
-    <%variableDefinitionsJacobians_skip(jacobianMatrixes, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, &jacobianVarsInit, createDebugCode)%>
+    <%variableDefinitionsJacobians_skip(jacobianMatrices, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, &jacobianVarsInit, createDebugCode)%>
 
     /*testmaessig aus der Cruntime*/
     void initializeColoredJacobianA();
@@ -386,7 +386,7 @@ template getPreVarsCount(ModelInfo modelInfo)
 end getPreVarsCount;
 
 
-template simulationMixedSystemHeaderFile(SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace)
+template simulationMixedSystemHeaderFile(SimCode simCode, Text& extraResidualsFuncsDecl)
  "Generates code for header file for simulation target."
 ::=
 match simCode
@@ -405,14 +405,11 @@ case SIMCODE(modelInfo=MODELINFO(vars = vars as SIMVARS(__))) then
      <%lastIdentOfPath(modelInfo.name)%>Mixed(<%lastIdentOfPath(modelInfo.name)%>Mixed &instance);
     virtual ~ <%lastIdentOfPath(modelInfo.name)%>Mixed();
 
-
-
     /// Provide Jacobian
     virtual const matrix_t& getJacobian() ;
     virtual const matrix_t& getJacobian(unsigned int index) ;
     virtual sparsematrix_t& getSparseJacobian();
     virtual sparsematrix_t& getSparseJacobian(unsigned int index);
-
 
     virtual  const matrix_t& getStateSetJacobian(unsigned int index);
     virtual  sparsematrix_t& getStateSetSparseJacobian(unsigned int index);
@@ -435,8 +432,9 @@ case SIMCODE(modelInfo=MODELINFO(vars = vars as SIMVARS(__))) then
     virtual bool isJacobianSparse();//true if getSparseJacobian is implemented and getJacobian is not, false if getJacobian is implemented and getSparseJacobian is not.
     virtual bool isAnalyticJacobianGenerated();//true if the flag --generateSymbolicJacobian is true, false if not.
    private:
-    //update residual methods
-  <%simulationDAEMethodsDeclaration(simCode)%>
+    // update residual methods
+    <%extraResidualsFuncsDecl%>
+    <%simulationDAEMethodsDeclaration(simCode)%>
   };
   >>
 end simulationMixedSystemHeaderFile;
@@ -639,12 +637,12 @@ template simulationJacobianCppFile(SimCode simCode, Text& extraFuncs, Text& extr
 ::=
 match simCode
 case SIMCODE(modelInfo = MODELINFO(__)) then
-   let initialjacMats = (jacobianMatrixes |> JAC_MATRIX(columns=mat, seedVars=vars, matrixName=name, sparsity=sparsepattern, coloredCols=colorList, jacobianIndex=jacIndex) =>
+   let initialjacMats = (jacobianMatrices |> JAC_MATRIX(columns=mat, seedVars=vars, matrixName=name, sparsity=sparsepattern, coloredCols=colorList, jacobianIndex=jacIndex) =>
     initialAnalyticJacobians(jacIndex, mat, vars, name, sparsepattern, colorList, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace)
     ;separator="\n";empty)
    <<
 
-   <% (jacobianMatrixes |> JAC_MATRIX(columns=mat) hasindex index0 =>
+   <% (jacobianMatrices |> JAC_MATRIX(columns=mat) hasindex index0 =>
        (mat |> JAC_COLUMN(columnEqns=eqs) =>  algloopfilesInclude(eqs, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace) ;separator="")
      ;separator="")
    %>
@@ -680,7 +678,7 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
        delete [] _ADependenciesOfColumn;
    }
 
-   <%functionAnalyticJacobians(modelInfo,jacobianMatrixes, simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)%>
+   <%functionAnalyticJacobians(modelInfo,jacobianMatrices, simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)%>
 
    //testmaessig aus der cruntime
    /* Jacobians */
@@ -688,7 +686,7 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
 
    void <%lastIdentOfPath(modelInfo.name)%>Jacobian::initializeColoredJacobianA()
    {
-   <%functionAnalyticJacobians2(jacobianMatrixes, lastIdentOfPath(modelInfo.name),simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)%>
+   <%functionAnalyticJacobians2(jacobianMatrices, lastIdentOfPath(modelInfo.name),simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)%>
    }
    <%\n%>
    >>
@@ -970,13 +968,13 @@ case modelInfo as MODELINFO(vars=SIMVARS(__)) then
    >>
 end simulationWriteOutputAliasVarsCppFile;
 
-template simulationMixedSystemCppFile(SimCode simCode , Text updateResidualFunctionsCode, Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace, Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation)
+template simulationMixedSystemCppFile(SimCode simCode, Text updateResidualFunctionsCode, Text& extraFuncs, Text& extraFuncsDecl, Text extraFuncsNamespace, Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation)
  "Generates code for main cpp file for simulation target."
 ::=
 match simCode
 case SIMCODE(modelInfo = MODELINFO(__)) then
 
-  let getJacobianForIndexMethods =   (jacobianMatrixes |> JAC_MATRIX(columns=mat, matrixName=name, coloredCols=colorList, jacobianIndex=jacIndex) =>
+  let getJacobianForIndexMethods =   (jacobianMatrices |> JAC_MATRIX(columns=mat, matrixName=name, coloredCols=colorList, jacobianIndex=jacIndex) =>
           generateJacobianForIndex(simCode, mat, colorList, jacIndex, name, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
     ;separator="\n\n";empty)
   let classname = lastIdentOfPath(modelInfo.name)
@@ -1175,14 +1173,14 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
    {
      return "<%fileNamePrefix%>";
    }
-   <%updateResidualFunctionsCode%>
 
+   <%updateResidualFunctionsCode%>
    >>
 end simulationMixedSystemCppFile;
 
 
 template generateJacobianForIndex(SimCode simCode, list<JacobianColumn> jacobianColumn, list<list<Integer>> colorList,Integer indexJacobian, String matrixName,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace,                                Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation)
- "Generates Matrixes for Linear Model."
+ "Generates Matrices for Linear Model."
 ::=
 match simCode
 case SIMCODE(modelInfo = MODELINFO(__)) then
@@ -1527,9 +1525,7 @@ case SIMCODE(modelInfo=MODELINFO(__)) then
 end functionStateSets;
 
 
-
-
-template simulationMainRunScript(SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace, String preRunCommandLinux, String preRunCommandWindows, String execCommandLinux)
+template simulationMainRunScript(SimCode simCode, Text& extraFuncs, Text& extraFuncsDecl, Text extraFuncsNamespace, String preRunCommandLinux, String preRunCommandWindows, String execCommandLinux)
  "Generates code for header file for simulation target."
 ::=
   match simCode
@@ -1539,15 +1535,15 @@ template simulationMainRunScript(SimCode simCode ,Text& extraFuncs,Text& extraFu
     let stepsize  = settings.stepSize
     let intervals = settings.numberOfIntervals
     let tol       = settings.tolerance
-    let solver    = match simCode case SIMCODE(daeModeData=NONE()) then settings.method else 'ida' //for dae mode only ida is supported
-    let moLib     =  makefileParams.compileDir
+    let solver    = settings.method
+    let moLib     = makefileParams.compileDir
     let home      = makefileParams.omhome
     let outputformat = settings.outputFormat
     let execParameters = '-S <%start%> -E <%end%> -H <%stepsize%> -G <%intervals%> -P <%outputformat%> -T <%tol%> -I <%solver%> -R "<%simulationLibDir(simulationCodeTarget(),simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)%>" -M "<%moLib%>" -r "<%simulationResults(Testsuite.isRunning(),simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)%>"'
     let outputParameter = if (stringEq(settings.outputFormat, "empty")) then "-O none" else ""
     let fileNamePrefixx = fileNamePrefix
 
-    let libFolder = simulationLibDir(simulationCodeTarget(),simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)
+    let libFolder = simulationLibDir(simulationCodeTarget(), simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace)
     let libPaths = makefileParams.libPaths |> path => path; separator=";"
 
     match makefileParams.platform
@@ -2382,7 +2378,7 @@ case SIMCODE(modelInfo=MODELINFO(__), makefileParams=MAKEFILE_PARAMS(__), simula
             %>
             <%if (Flags.getConfigBool(Flags.LABELED_REDUCTION)) then
               <<
-              simulation.first->StartReduceDAE(simulation.second,"<%identOfPathDot(modelInfo.name)%>", "<%lastIdentOfPath(modelInfo.name)%>", <%Flags.getConfigBool(Flags.LOAD_MSL_MODEL)%>,<%Flags.getConfigBool(Flags.Load_PACKAGE_FILE)%>);
+              simulation.first->StartReduceDAE(simulation.second,"<%identOfPathDot(modelInfo.name)%>", "<%lastIdentOfPath(modelInfo.name)%>", <%Flags.getConfigBool(Flags.LOAD_MSL_MODEL)%>,<%Flags.getConfigBool(Flags.LOAD_PACKAGE_FILE)%>);
               >>
             else
               <<
@@ -5047,10 +5043,11 @@ template extArg(SimExtArg extArg, Text &preExp, Text &varDecls, Text &inputAssig
 
   case SIMEXTARG(cref=c, isInput=ii, outputIndex=0, type_=t) then
     let cr = '<%contextCref2(c,contextFunction)%>'
+    let byref = match t case T_COMPLEX(complexClassType=RECORD(__)) then '&'
     if acceptMetaModelicaGrammar() then
       (match t case T_STRING(__) then 'MMC_STRINGDATA(<%cr%>)' else '<%cr%>_ext')
     else
-      '<%cr%><%match t case T_STRING(__) then ".c_str()" else "_ext"%>'
+      '<%byref%><%cr%><%match t case T_STRING(__) then ".c_str()" else "_ext"%>'
   case SIMEXTARG(cref=c, isInput=ii, outputIndex=oi, type_=t) then
     let extName = extVarName2(c)
     let &outputAssign += '<%contextCref2(c,contextFunction)%> = <%extName%>;<%\n%>'
@@ -6769,7 +6766,6 @@ case SIMCODE(modelInfo=MODELINFO(__), extObjInfo=EXTOBJINFO(__)) then
   #include <Core/System/SystemDefaultImplementation.h>
 
   //Forward declaration to speed-up the compilation process
-  class Functions;
   class EventHandling;
   class DiscreteEvents;
   <%algloopForwardDeclaration(listAppend(listAppend(allEquations, initialEquations), getClockedEquations(getSubPartitions(clockedPartitions))), simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace)%>
@@ -6805,7 +6801,7 @@ case SIMCODE(modelInfo=MODELINFO(__), extObjInfo=EXTOBJINFO(__)) then
   >>
 end generateAlgloopHeaderInlcudeString;
 
-template generateClassDeclarationCode(SimCode simCode,Context context,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace,
+template generateClassDeclarationCode(SimCode simCode, Context context, Text& extraFuncs, Text& extraFuncsDecl, Text extraFuncsNamespace,
                                       String additionalPublicMembers, String additionalProtectedMembers, String memberVariableDefinitions,
                                       Boolean useFlatArrayNotation)
  "Generates class declarations."
@@ -6817,13 +6813,13 @@ let friendclasses = generatefriendAlgloops(listAppend(listAppend(allEquations, i
 let algloopsolvers = generateAlgloopsolverVariables(modelInfo,simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace)
 
 let algloopsystems = generateAlgloopsSystemVariables(listAppend(listAppend(allEquations, initialEquations), getClockedEquations(getSubPartitions(clockedPartitions))), simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace )
-let jacalgloopsystems =  (jacobianMatrixes |> JAC_MATRIX(columns=mat) hasindex index0 =>
-                        (mat |> JAC_COLUMN(columnEqns=eqs) =>  generateAlgloopsSystemVariables(eqs,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace) ;separator="\n")
+let jacalgloopsystems = (jacobianMatrices |> JAC_MATRIX(columns=mat) hasindex index0 =>
+                        (mat |> JAC_COLUMN(columnEqns=eqs) => generateAlgloopsSystemVariables(eqs, simCode, &extraFuncs , &extraFuncsDecl, extraFuncsNamespace) ;separator="\n")
                         ;separator="")
 
 let memberfuncs = generateEquationMemberFuncDecls(allEquations,"evaluate")
 let clockedfuncs = generateClockedFuncDecls(getSubPartitions(clockedPartitions), "evaluate")
-let conditionvariables =  conditionvariable(zeroCrossings,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace)
+let conditionvariables = conditionvariable(zeroCrossings, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace)
 
 match modelInfo
   case MODELINFO(vars=SIMVARS(__)) then
@@ -6832,8 +6828,14 @@ match modelInfo
     void getString_<%idx%>(string* z);
     >>
     ;separator="\n")
-
-
+  let auxiliaryVarDecls = match simCode
+    case SIMCODE(daeModeData=SOME(DAEMODEDATA(auxiliaryVars=auxiliaryVars))) then
+    (auxiliaryVars |> var =>
+      (match var
+      case SIMVAR(__) then
+        '<%expTypeShort(type_)%> <%cref(name, false)%>;'
+      end match)
+    ;separator="\n")
 
   <<
   <%if boolNot(stringEq(getConfigString(PROFILING_LEVEL),"none")) then
@@ -6903,6 +6905,8 @@ match modelInfo
       int* _stateActivator;
 
       <%memberVariableDefinitions%>
+      /*auxiliary DAE variables*/
+      <%auxiliaryVarDecls%>
       <%conditionvariables%>
       Functions* _functions;
 
@@ -6930,7 +6934,7 @@ match modelInfo
       <%additionalProtectedMembers%>
       /*Additional member functions*/
       <%extraFuncsDecl%>
-   };
+  };
   >>
    /*! Equations Array. pointers to all the equation functions listed above stored in this
       array. It is used to randomly access and evaluate a single equation by index.
@@ -10329,7 +10333,7 @@ template generateAlgloopSystems2(SimEqSystem eq, Context context, Text &varDecls
     ""
  end generateAlgloopSystems2;
 /*
-let jacAlgloopsolver = (jacobianMatrixes |> (mat, _, _, _, _, _, _) hasindex index0 =>
+let jacAlgloopsolver = (jacobianMatrices |> (mat, _, _, _, _, _, _) hasindex index0 =>
        (mat |> (eqs,_,_) =>  generateAlgloopsSystemVariables(eqs,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace) ;separator="\n")
      ;separator="")
 */
@@ -10367,7 +10371,7 @@ template generateAlgloopsolverVariables2( SimCode simCode ,Text& extraFuncs,Text
   match simCode
     case SIMCODE(__) then
    let algloopsolvers = generateAlgloopsolverVariables3(modelInfo,listAppend(listAppend(allEquations, initialEquations), getClockedEquations(getSubPartitions(clockedPartitions))), simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace)
-   let jacalgloopsolver =  (jacobianMatrixes |> JAC_MATRIX(columns=mat) hasindex index0 =>
+   let jacalgloopsolver =  (jacobianMatrices |> JAC_MATRIX(columns=mat) hasindex index0 =>
                        (mat |> JAC_COLUMN(columnEqns=eqs) =>  generateAlgloopsolverVariables3(modelInfo,eqs,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace) ;separator="\n")
                     ;separator="")
   <<
@@ -10719,7 +10723,7 @@ template algloopMainfile(SimCode simCode, Text& extraFuncs, Text& extraFuncsDecl
     let filename = fileNamePrefix
     let modelfilename =  match context case  ALGLOOP_CONTEXT(genInitialisation=false,genJacobian=true)  then '<%filename%>Jacobian' else '<%filename%>'
 
-    let jacfiles = (jacobianMatrixes |> JAC_MATRIX(columns=mat) hasindex index0 => (mat |> JAC_COLUMN(columnEqns=eqs) =>  algloopMainfile1(eqs, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, filename) ;separator="") ;separator="")
+    let jacfiles = (jacobianMatrices |> JAC_MATRIX(columns=mat) hasindex index0 => (mat |> JAC_COLUMN(columnEqns=eqs) =>  algloopMainfile1(eqs, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, filename) ;separator="") ;separator="")
     let algloopfiles = (listAppend(listAppend(allEquations, initialEquations), getClockedEquations(getSubPartitions(clockedPartitions))) |> eqs => algloopMainfile2(eqs, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, filename) ;separator="\n")
 
     <<
@@ -12238,14 +12242,14 @@ template giveZeroFunc3(Integer index1, Exp relation, Text &varDecls /*BUFP*/,Tex
         >>
       else
         <<
-        error(sourceInfo(), 'Unknown relation: <%ExpressionDumpTpl.dumpExp(rel,"\"")%> for <%index1%>')
+        error(sourceInfo(), 'Unsupported relation: <%ExpressionDumpTpl.dumpExp(rel,"\"")%> for <%index1%>')
         >>
       end match
   case CALL(path=IDENT(name="sample"), expLst={_, start, interval}) then
     //error(sourceInfo(), ' sample not supported for <%index1%> ')
     '//sample for <%index1%>'
   else
-    error(sourceInfo(), ' UNKNOWN ZERO CROSSING for <%index1%> ')
+    error(sourceInfo(), 'Unsupported zero crossing at <%index1%>: <%ExpressionDumpTpl.dumpExp(relation, "\"")%>')
   end match
 end giveZeroFunc3;
 
@@ -12425,6 +12429,8 @@ case SIMCODE(modelInfo = MODELINFO(__)) then
     <%createTimeConditionTreatments(timeEventLength(simCode), clockedPartitions)%>
 
     // Evaluate Equations
+    if (_dimAE > 0)
+      evaluateDAE(command);
     <%equation_all_func_calls%>
 
     <%if createMeasureTime then generateMeasureTimeEndCode("measuredFunctionStartValues", "measuredFunctionEndValues", "(*measureTimeFunctionsArray)[1]", "evaluateAll", "MEASURETIME_MODELFUNCTIONS") else ""%>
@@ -12672,15 +12678,15 @@ then
 end setVariables;
 
 
-template functionAnalyticJacobians2(list<JacobianMatrix> JacobianMatrixes,String modelNamePrefix,SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace, Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation) "template functionAnalyticJacobians
+template functionAnalyticJacobians2(list<JacobianMatrix> JacobianMatrices,String modelNamePrefix,SimCode simCode ,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace, Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation) "template functionAnalyticJacobians
   This template generates source code for all given jacobians."
 ::=
   let &varDecls = buffer "" /*BUFD*/
-  let initialjacMats = (JacobianMatrixes |> JAC_MATRIX(columns=mat, seedVars=vars, matrixName=name, sparsity=sparsepattern, coloredCols=colorList, maxColorCols=maxColor, jacobianIndex=indexJacobian) =>
+  let initialjacMats = (JacobianMatrices |> JAC_MATRIX(columns=mat, seedVars=vars, matrixName=name, sparsity=sparsepattern, coloredCols=colorList, maxColorCols=maxColor, jacobianIndex=indexJacobian) =>
     initialAnalyticJacobians2(mat, vars, name, sparsepattern, colorList, maxColor, modelNamePrefix); separator="\n")
 
    /*
-  let jacMats = (JacobianMatrixes |> (mat, vars, name, sparsepattern, colorList, maxColor, indexJacobian) =>
+  let jacMats = (JacobianMatrices |> (mat, vars, name, sparsepattern, colorList, maxColor, indexJacobian) =>
     generateMatrix(mat, vars, name, modelNamePrefix) ;separator="\n")
 */
   <<
@@ -12757,13 +12763,13 @@ template symbolName(String modelNamePrefix, String symbolName)
 end symbolName;
 
 
-template functionAnalyticJacobiansHeader(list<JacobianMatrix> JacobianMatrixes,String modelNamePrefix) "template functionAnalyticJacobians
+template functionAnalyticJacobiansHeader(list<JacobianMatrix> JacobianMatrices,String modelNamePrefix) "template functionAnalyticJacobians
   This template generates source code for all given jacobians."
 ::=
-  let initialjacMats = (JacobianMatrixes |> JAC_MATRIX(columns=mat, seedVars=vars, matrixName=name, sparsity=sparsepattern, coloredCols=colorList, maxColorCols=maxColor, jacobianIndex=indexJacobian) =>
+  let initialjacMats = (JacobianMatrices |> JAC_MATRIX(columns=mat, seedVars=vars, matrixName=name, sparsity=sparsepattern, coloredCols=colorList, maxColorCols=maxColor, jacobianIndex=indexJacobian) =>
     initialAnalyticJacobiansHeader(mat, vars, name, sparsepattern, colorList, maxColor, modelNamePrefix); separator="\n")
 /*
-  let jacMats = (JacobianMatrixes |> (mat, vars, name, sparsepattern, colorList, maxColor, indexJacobian) =>
+  let jacMats = (JacobianMatrices |> (mat, vars, name, sparsepattern, colorList, maxColor, indexJacobian) =>
     generateMatrix(mat, vars, name, modelNamePrefix) ;separator="\n")
 */
   <<
@@ -12853,9 +12859,9 @@ template initialAnalyticJacobians(Integer indexJacobian, list<JacobianColumn> ja
 end initialAnalyticJacobians;
 
 
-template functionAnalyticJacobians(ModelInfo modelInfo, list<JacobianMatrix> JacobianMatrixes, SimCode simCode, Text& extraFuncs,
+template functionAnalyticJacobians(ModelInfo modelInfo, list<JacobianMatrix> JacobianMatrices, SimCode simCode, Text& extraFuncs,
                                    Text& extraFuncsDecl, Text extraFuncsNamespace, Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation)
- "Generates Matrixes for Linear Model."
+ "Generates Matrices for Linear Model."
 ::=
 
   match modelInfo
@@ -12863,23 +12869,23 @@ template functionAnalyticJacobians(ModelInfo modelInfo, list<JacobianMatrix> Jac
   let classname = lastIdentOfPath(name)
   let &varDecls = buffer "" /*BUFD*/
 
-  let jacMats = (JacobianMatrixes |> JAC_MATRIX(columns=mat, seedVars=vars, matrixName=name, sparsity=sparsepattern, coloredCols=colorList, maxColorCols=maxColor, jacobianIndex=jacIndex, partitionIndex=partIdx) =>
+  let jacMats = (JacobianMatrices |> JAC_MATRIX(columns=mat, seedVars=vars, matrixName=name, sparsity=sparsepattern, coloredCols=colorList, maxColorCols=maxColor, jacobianIndex=jacIndex, partitionIndex=partIdx) =>
     generateMatrix(jacIndex, mat, vars, name, sparsepattern, colorList, maxColor, partIdx, simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace, stateDerVectorName, useFlatArrayNotation)
     ;separator="\n\n";empty)
  /*let initialStateSetJac = (stateSets |> set hasindex i1 fromindex 0 => (match set
        case set as SES_STATESET(__) then
               match jacobianMatrix case (_,_,name,_,_,_,_) then
             'initialAnalytic<%name%>Jacobian();') ;separator="\n")
-   let initialJacMats = (JacobianMatrixes |> (mat, vars, name, (sparsepattern,_), colorList, maxColor, jacIndex) =>
+   let initialJacMats = (JacobianMatrices |> (mat, vars, name, (sparsepattern,_), colorList, maxColor, jacIndex) =>
     'initialAnalytic<%name%>Jacobian();'
     ;separator="\n";empty)
   */
 
- let jacalgloopsystems =  (JacobianMatrixes |> JAC_MATRIX(columns=mat) hasindex index0 =>
+ let jacalgloopsystems =  (JacobianMatrices |> JAC_MATRIX(columns=mat) hasindex index0 =>
        (mat |> JAC_COLUMN(columnEqns=eqs) =>  generateAlgloopSystems(eqs,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace) ;separator="")
       ;separator="")
 
- let jacalgloopsolvers=  (JacobianMatrixes |> JAC_MATRIX(columns=mat) hasindex index0 =>
+ let jacalgloopsolvers=  (JacobianMatrices |> JAC_MATRIX(columns=mat) hasindex index0 =>
        (mat |> JAC_COLUMN(columnEqns=eqs) =>  generateAlgloopSolvers(modelInfo,eqs,simCode , &extraFuncs , &extraFuncsDecl,  extraFuncsNamespace) ;separator="")
       ;separator="")
 
@@ -12924,7 +12930,7 @@ end functionJac;
 template generateMatrix(Integer indexJacobian, list<JacobianColumn> jacobianColumn, list<SimVar> seedVars, String matrixname,
                         SparsityPattern sparsepattern, list<list<Integer>>colorList, Integer maxColor, Integer partIdx,
                         SimCode simCode, Text& extraFuncs, Text& extraFuncsDecl, Text extraFuncsNamespace, Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation)
- "Generates Matrixes for Linear Model."
+ "Generates Matrices for Linear Model."
 ::=
   match simCode
   case SIMCODE(modelInfo = MODELINFO(__)) then
@@ -12937,7 +12943,7 @@ template generateJacobianMatrix(ModelInfo modelInfo, Integer indexJacobian, list
                                 String matrixName, SparsityPattern sparsepattern, list<list<Integer>> colorList, Integer partIdx,
                                 Integer maxColor, SimCode simCode, Text& extraFuncs, Text& extraFuncsDecl, Text extraFuncsNamespace,
                                 Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation)
- "Generates Matrixes for Linear Model."
+ "Generates Matrices for Linear Model."
 ::=
 match simCode
 case SIMCODE(modelInfo = MODELINFO(__)) then
@@ -13022,17 +13028,17 @@ case _ then
 end generateJacobianMatrix;
 
 
-template variableDefinitionsJacobians_skip(list<JacobianMatrix> JacobianMatrixes, SimCode simCode, Text& extraFuncs, Text& extraFuncsDecl, Text extraFuncsNamespace, Text &jacobianVarsInit, Boolean createDebugCode)
+template variableDefinitionsJacobians_skip(list<JacobianMatrix> JacobianMatrices, SimCode simCode, Text& extraFuncs, Text& extraFuncsDecl, Text extraFuncsNamespace, Text &jacobianVarsInit, Boolean createDebugCode)
  "Skips generation of defines for jacobian vars."
 ::=
  ''
 end variableDefinitionsJacobians_skip;
 
 
-template variableDefinitionsJacobians(list<JacobianMatrix> JacobianMatrixes, SimCode simCode, Text& extraFuncs, Text& extraFuncsDecl, Text extraFuncsNamespace, Text &jacobianVarsInit, Boolean createDebugCode)
+template variableDefinitionsJacobians(list<JacobianMatrix> JacobianMatrices, SimCode simCode, Text& extraFuncs, Text& extraFuncsDecl, Text extraFuncsNamespace, Text &jacobianVarsInit, Boolean createDebugCode)
  "Generates defines for jacobian vars."
 ::=
-  let analyticVars = (JacobianMatrixes |> JAC_MATRIX(columns=jacColumn, seedVars=vars, matrixName=name, jacobianIndex=jacIndex)  =>
+  let analyticVars = (JacobianMatrices |> JAC_MATRIX(columns=jacColumn, seedVars=vars, matrixName=name, jacobianIndex=jacIndex)  =>
     let varsDef = variableDefinitionsJacobians2(jacIndex, jacColumn, seedVars, name, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, &jacobianVarsInit, createDebugCode)
     <<
     <%varsDef%>
@@ -13046,7 +13052,7 @@ template variableDefinitionsJacobians(list<JacobianMatrix> JacobianMatrixes, Sim
 end variableDefinitionsJacobians;
 
 template variableDefinitionsJacobians2(Integer indexJacobian, list<JacobianColumn> jacobianColumn, list<SimVar> seedVars, String name, SimCode simCode, Text& extraFuncs, Text& extraFuncsDecl, Text extraFuncsNamespace, Text& jacobianVarsInit, Boolean createDebugCode)
- "Generates Matrixes for Linear Model."
+ "Generates Matrices for Linear Model."
 ::=
   let seedVarsResult = (seedVars |> var hasindex index0 =>
     jacobianVarDefine(var, indexJacobian, index0, name, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace, &jacobianVarsInit, createDebugCode)
@@ -13816,13 +13822,7 @@ template generateMeasureTimeEndCode(String varNameStartValues, String varNameEnd
 end generateMeasureTimeEndCode;
 
 
-
 /*daeMode templates*/
-
-
-
-
-
 
 template simulationDAEMethodsDeclaration(SimCode simCode)
 ::=
@@ -13830,24 +13830,19 @@ match simCode
     case SIMCODE(modelInfo=MODELINFO(vars=SIMVARS(__)),
         daeModeData=SOME(DAEMODEDATA(daeEquations=daeEquations, sparsityPattern=sparsityPattern,
                                      algebraicVars=algebraicDAEVars, residualVars=residualVars))) then
- <<
-  <%generateDAEEquationMemberFuncDecls(daeEquations,"evaluateDAE")%>
-
- >>
+  <<
+  <%generateDAEEquationMemberFuncDecls(daeEquations, "evaluateDAE")%>
+  >>
 end simulationDAEMethodsDeclaration;
 
-template updateResiduals(SimCode simCode,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace,  Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation)
+template updateResiduals(SimCode simCode, Text& extraResidualsFuncsDecl, Text extraFuncsNamespace, Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation)
 ::=
- let &extraFuncsResidual = buffer "" /*BUFD*/
-<<
-<%simulationDAEMethods(simCode, extraFuncsResidual,extraFuncsDecl, extraFuncsNamespace,contextOther,stateDerVectorName,useFlatArrayNotation,boolNot(stringEq(getConfigString(PROFILING_LEVEL),"none")))%>
+  let &extraResidualsFuncs = buffer "" /*BUFD*/
+  <<
+  <%simulationDAEMethods(simCode, extraResidualsFuncs, extraResidualsFuncsDecl, extraFuncsNamespace, contextOther, stateDerVectorName, useFlatArrayNotation, boolNot(stringEq(getConfigString(PROFILING_LEVEL), "none")))%>
 
-<%extraFuncsResidual%>
-
-
-
-
->>
+  <%extraResidualsFuncs%>
+  >>
 end updateResiduals;
 
 template generateDAEEquationMemberFuncDecls(list<list<SimEqSystem>> DAEEquations,Text method)
@@ -13863,7 +13858,7 @@ template generateDAEEquationMemberFuncDecls(list<list<SimEqSystem>> DAEEquations
 end generateDAEEquationMemberFuncDecls;
 
 
-template simulationDAEMethods(SimCode simCode,Text& extraFuncs,Text& extraFuncsDecl,Text extraFuncsNamespace, Context context, Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation, Boolean enableMeasureTime)
+template simulationDAEMethods(SimCode simCode, Text& extraFuncs, Text& extraFuncsDecl, Text extraFuncsNamespace, Context context, Text stateDerVectorName /*=__zDot*/, Boolean useFlatArrayNotation, Boolean enableMeasureTime)
 "DAEmode equations generation"
 ::=
   match simCode
@@ -13873,12 +13868,9 @@ template simulationDAEMethods(SimCode simCode,Text& extraFuncs,Text& extraFuncsD
      let modelNamePrefixStr = lastIdentOfPath(modelInfo.name)
 
      <<
-
-
-
      <%algebraicDAEVar(algebraicDAEVars, modelNamePrefixStr)%>
-     <%evaluateDAEResiduals(daeEquations, simCode ,extraFuncs,extraFuncsDecl,extraFuncsNamespace, context, enableMeasureTime)%>
-     <%equationResidualFunctions(daeEquations,simCode ,extraFuncs,extraFuncsDecl,extraFuncsNamespace, context, stateDerVectorName ,  useFlatArrayNotation,  enableMeasureTime)%>
+     <%evaluateDAEResiduals(daeEquations, simCode, extraFuncs, extraFuncsDecl, extraFuncsNamespace, context, enableMeasureTime)%>
+     <%equationResidualFunctions(daeEquations, simCode, extraFuncs, extraFuncsDecl, extraFuncsNamespace, context, stateDerVectorName, useFlatArrayNotation, enableMeasureTime)%>
      void <%modelNamePrefixStr%>Mixed::getResidual(double* f)
      {
         SystemDefaultImplementation::getResidual(f);
@@ -13891,7 +13883,6 @@ template simulationDAEMethods(SimCode simCode,Text& extraFuncs,Text& extraFuncsD
     /* DAE residuals is empty */
     void <%modelNamePrefixStr%>Mixed::getResidual(double* f)
     {
-
     }
     void <%modelNamePrefixStr%>Mixed::setAlgebraicDAEVars(const double* y)
     {
@@ -13902,7 +13893,6 @@ template simulationDAEMethods(SimCode simCode,Text& extraFuncs,Text& extraFuncsD
     }
     void <%modelNamePrefixStr%>Mixed::evaluateDAE(const UPDATETYPE command )
     {
-
     }
     >>
   end match
@@ -13966,11 +13956,11 @@ template evaluateDAEResiduals(list<list<SimEqSystem>> resEquations, SimCode simC
   let &varDecls = buffer ""
 
   let equation_dae_func_calls = if not Flags.isSet(Flags.MULTIRATE_PARTITION) then (List.partition(List.flatten(resEquations), 100) |> eqs hasindex i0 =>
-                                 createEvaluateWithSplit(i0, context, eqs, "evaluateDAE","evaluateDAE", className, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace)
+                                 createEvaluateWithSplit(i0, context, eqs, "evaluateDAE", "evaluateDAE", className, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace)
                                  ;separator="\n")
                 else ( List.intRange(partitionData.numPartitions) |> partIdx =>
                 createEvaluatePartitions(partIdx, context, List.flatten(resEquations), listGet(partitions, partIdx),
-                listGet(activatorsForPartitions,partIdx), className,simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace) ;separator="\n")
+                listGet(activatorsForPartitions,partIdx), className, simCode, &extraFuncs, &extraFuncsDecl, extraFuncsNamespace) ;separator="\n")
   <<
   void <%className%>::evaluateDAE(const UPDATETYPE command )
   {

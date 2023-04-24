@@ -240,7 +240,7 @@ protected function makeVar "author: Vitalij Ruge"
 
 algorithm
   cr := ComponentReference.makeCrefIdent(name, DAE.T_REAL_DEFAULT, {});
-  v :=  BackendDAE.VAR(cr, BackendDAE.VARIABLE(), DAE.OUTPUT(), DAE.NON_PARALLEL(), DAE.T_REAL_DEFAULT, NONE(), NONE(), {}, DAE.emptyElementSource, NONE(), SOME(BackendDAE.AVOID()), NONE(), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false);
+  v :=  BackendDAE.VAR(cr, BackendDAE.VARIABLE(), DAE.OUTPUT(), DAE.NON_PARALLEL(), DAE.T_REAL_DEFAULT, NONE(), NONE(), {}, DAE.emptyElementSource, NONE(), SOME(BackendDAE.AVOID()), NONE(), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false, false);
 end makeVar;
 
 protected function addOptimizationVarsEqns1
@@ -264,7 +264,7 @@ algorithm
 
  for elem in constraintLst loop
    try
-     conCrefName := prefConCrefName + ComponentReference.crefModelicaStr(Expression.expCref(elem));
+     conCrefName := prefConCrefName + ComponentReference.printComponentRefStr(Expression.expCref(elem));
    else
      conCrefName := prefConCrefName + intString(i);
      i := i + 1;

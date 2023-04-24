@@ -34,12 +34,6 @@
 
 //! @brief Contains functions used for parsing results obtained from OpenModelica Compiler.
 
-#define ANTLR4CPP_STATIC
-#include "antlr4-runtime.h"
-#include "modelicaLexer.h"
-#include "modelicaParser.h"
-#include "modelicaBaseListener.h"
-
 #include "StringHandler.h"
 #include "Helper.h"
 #include "Utilities.h"
@@ -700,7 +694,7 @@ QComboBox* StringHandler::getEndArrowComboBox()
  * Returns the font weight
  * \return
  */
-int StringHandler::getFontWeight(QList<StringHandler::TextStyle> styleList)
+int StringHandler::getFontWeight(QVector<StringHandler::TextStyle> styleList)
 {
   foreach (StringHandler::TextStyle textStyle, styleList) {
     if (textStyle == StringHandler::TextStyleBold) {
@@ -716,7 +710,7 @@ int StringHandler::getFontWeight(QList<StringHandler::TextStyle> styleList)
  * Returns true if font is italic.
  * \return
  */
-bool StringHandler::getFontItalic(QList<StringHandler::TextStyle> styleList)
+bool StringHandler::getFontItalic(QVector<StringHandler::TextStyle> styleList)
 {
   foreach (StringHandler::TextStyle textStyle, styleList) {
     if (textStyle == StringHandler::TextStyleItalic) {
@@ -732,7 +726,7 @@ bool StringHandler::getFontItalic(QList<StringHandler::TextStyle> styleList)
  * Returns true is font is underline.
  * \return
  */
-bool StringHandler::getFontUnderline(QList<StringHandler::TextStyle> styleList)
+bool StringHandler::getFontUnderline(QVector<TextStyle> styleList)
 {
   foreach (StringHandler::TextStyle textStyle, styleList) {
     if (textStyle == StringHandler::TextStyleUnderLine) {
@@ -798,6 +792,25 @@ QString StringHandler::getTextAlignmentString(StringHandler::TextAlignment align
       return "TextAlignment.Right";
     default:
       return "TextAlignment.Center";
+  }
+}
+
+/*!
+ * \brief StringHandler::getTextStyleType
+ * Returns the text style type.
+ * \param textStyle
+ * \return
+ */
+StringHandler::TextStyle StringHandler::getTextStyleType(QString textStyle)
+{
+  if (textStyle.compare("TextStyle.Bold") == 0) {
+    return StringHandler::TextStyleBold;
+  } else if (textStyle.compare("TextStyle.Italic") == 0) {
+    return StringHandler::TextStyleItalic;
+  } else if (textStyle.compare("TextStyle.UnderLine") == 0) {
+    return StringHandler::TextStyleUnderLine;
+  } else {
+    return StringHandler::TextStyleBold;
   }
 }
 
@@ -1649,29 +1662,6 @@ bool StringHandler::naturalSort(const QString &s1, const QString &s2) {
   }
 }
 
-QString StringHandler::cleanResultVariable(const QString &variable)
-{
-  QString str = variable;
-  if (str.startsWith("der(")) {
-    str.chop((str.lastIndexOf("der(")/4)+1);
-    str = str.mid(str.lastIndexOf("der(") + 4);
-  } else if (str.startsWith("previous(")) {
-    str.chop((str.lastIndexOf("previous(")/9)+1);
-    str = str.mid(str.lastIndexOf("previous(") + 9);
-  } else {
-    // do nothing
-  }
-  return str;
-}
-
-bool StringHandler::naturalSortForResultVariables(const QString &s1, const QString &s2)
-{
-  QString s3 = StringHandler::cleanResultVariable(s1);
-  QString s4 = StringHandler::cleanResultVariable(s2);
-
-  return StringHandler::naturalSort(s3, s4);
-}
-
 #if defined(_WIN32)
 /*!
  * \brief StringHandler::simulationProcessEnvironment
@@ -1724,24 +1714,6 @@ QString StringHandler::getSimulationMessageTypeString(StringHandler::SimulationM
       return "OMEditInfo";
     default:
       return "unknown";
-  }
-}
-
-QColor StringHandler::getSimulationMessageTypeColor(StringHandler::SimulationMessageType type)
-{
-  switch (type) {
-    case StringHandler::OMEditInfo:
-      return Qt::blue;
-    case StringHandler::SMWarning:
-    case StringHandler::Error:
-    case StringHandler::Assert:
-      return Qt::red;
-    case StringHandler::Debug:
-    case StringHandler::Info:
-    case StringHandler::Unknown:
-    default:
-      return Qt::black;
-      break;
   }
 }
 
@@ -1958,47 +1930,20 @@ QString StringHandler::insertClassAtPosition(QString parentClassText, QString ch
  * \brief StringHandler::number
  * Helper for QString::number with default precision of 16 instead of 6.
  * \param value
+ * \param hint - default "" otherwise previous value to get a hint on how to format the new one
  * \param format
  * \param precision
  * \return
  */
-QString StringHandler::number(double value, char format, int precision)
+QString StringHandler::number(double value, QString hint, char format, int precision)
 {
-  return QString::number(value, format, precision);
-}
-
-static std::string cmt = "";
-
-class ModelicaCommentListener : public openmodelica::modelicaBaseListener {
-    void exitComment(openmodelica::modelicaParser::CommentContext *ctx) override {
-        cmt = ctx->getText();
-    }
-};
-
-/*!
- * \brief StringHandler::getModelicaComment
- * Helper for QString::getModelicaComment
- * \param element
- * \return comment
- */
-QString StringHandler::getModelicaComment(QString element)
-{
-  cmt = "";
-  std::string s = element.toStdString();
-  antlr4::ANTLRInputStream input(s);
-  openmodelica::modelicaLexer lexer(&input);
-  antlr4::CommonTokenStream tokens(&lexer);
-  openmodelica::modelicaParser parser(&tokens);
-  antlr4::tree::ParseTree* tree = parser.argument();
-  ModelicaCommentListener listener;
-  antlr4::tree::ParseTreeWalker::DEFAULT.walk(&listener, tree);
-  if (cmt.size() > 1)
-  {
-    QString q;
-    q = q.fromStdString(cmt);
-    return removeFirstLastQuotes(q);
+  // we have a hint, see if we can use it to display the number in a similar fashion
+  if (hint.contains("e", Qt::CaseInsensitive)) {
+    // we have an e in the hint, attempt to shorten the number!
+    return QString::number(value, format, QLocale::FloatingPointShortest);
+  } else {
+    return QString::number(value, format, precision);
   }
-  return element;
 }
 
 /*!

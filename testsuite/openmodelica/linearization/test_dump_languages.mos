@@ -32,10 +32,10 @@ readFile("linearized_model.py"); getErrorString();
 // record SimulationResult
 //     resultFile = "simple_test_res.mat",
 //     simulationOptions = "startTime = 0.0, stopTime = 0.5, numberOfIntervals = 500, tolerance = 1e-06, method = 'dassl', fileNamePrefix = 'simple_test', options = '', outputFormat = 'mat', variableFilter = '.*', cflags = '', simflags = ''",
-//     messages = "stdout            | info    | Linearization will be performed at point of time: 0.500000
+//     messages = "LOG_STDOUT        | info    | Linearization will be performed at point of time: 0.500000
 // LOG_SUCCESS       | info    | The initialization finished successfully without homotopy method.
 // LOG_SUCCESS       | info    | The simulation finished successfully.
-// stdout            | info    | Linear model is created.
+// LOG_STDOUT        | info    | Linear model is created.
 // "
 // end SimulationResult;
 // "Warning: The initial conditions are not fully specified. For more information set -d=initialization. In OMEdit Tools->Options->Simulation->Show additional information from the initialization process, in OMNotebook call setCommandLineOptions(\"-d=initialization\").
@@ -80,15 +80,15 @@ readFile("linearized_model.py"); getErrorString();
 // record SimulationResult
 //     resultFile = "simple_test_res.mat",
 //     simulationOptions = "startTime = 0.0, stopTime = 0.5, numberOfIntervals = 500, tolerance = 1e-06, method = 'dassl', fileNamePrefix = 'simple_test', options = '', outputFormat = 'mat', variableFilter = '.*', cflags = '', simflags = ''",
-//     messages = "stdout            | info    | Linearization will be performed at point of time: 0.500000
+//     messages = "LOG_STDOUT        | info    | Linearization will be performed at point of time: 0.500000
 // LOG_SUCCESS       | info    | The initialization finished successfully without homotopy method.
 // LOG_SUCCESS       | info    | The simulation finished successfully.
-// stdout            | info    | Linear model is created.
+// LOG_STDOUT        | info    | Linear model is created.
 // "
 // end SimulationResult;
 // "Warning: The initial conditions are not fully specified. For more information set -d=initialization. In OMEdit Tools->Options->Simulation->Show additional information from the initialization process, in OMNotebook call setCommandLineOptions(\"-d=initialization\").
 // "
-// "function [sys, x0, u0, n, m, p, Ts] = linearized_model()
+// "function [A, B, C, D, stateVars, inputVars, outputVars] = linearized_model()
 // % simple_test
 // % der(x) = A * x + B * u
 // % y = C * x + D * u
@@ -109,20 +109,21 @@ readFile("linearized_model.py"); getErrorString();
 //
 //   D =	[4.007476581092785];
 //
+//   stateVars  = {'num_x(1)','num_x(2)'};
+//   inputVars  = {'u'};
+//   outputVars = {'y'};
 //   Ts = 0.5; % stop time
 //
-//   % The Control System Toolbox is required for this. Alternatively just return the matrices A,B,C,D instead.
-//   sys = ss(A,B,C,D,'StateName',{'x_num_x(1)','x_num_x(2)'}, 'InputName',{'u_u'}, 'OutputName', {'y_y'});
 // end"
 // ""
 // true
 // record SimulationResult
 //     resultFile = "simple_test_res.mat",
 //     simulationOptions = "startTime = 0.0, stopTime = 0.5, numberOfIntervals = 500, tolerance = 1e-06, method = 'dassl', fileNamePrefix = 'simple_test', options = '', outputFormat = 'mat', variableFilter = '.*', cflags = '', simflags = ''",
-//     messages = "stdout            | info    | Linearization will be performed at point of time: 0.500000
+//     messages = "LOG_STDOUT        | info    | Linearization will be performed at point of time: 0.500000
 // LOG_SUCCESS       | info    | The initialization finished successfully without homotopy method.
 // LOG_SUCCESS       | info    | The simulation finished successfully.
-// stdout            | info    | Linear model is created.
+// LOG_STDOUT        | info    | Linear model is created.
 // "
 // end SimulationResult;
 // "Warning: The initial conditions are not fully specified. For more information set -d=initialization. In OMEdit Tools->Options->Simulation->Show additional information from the initialization process, in OMNotebook call setCommandLineOptions(\"-d=initialization\").
@@ -160,10 +161,10 @@ readFile("linearized_model.py"); getErrorString();
 // record SimulationResult
 //     resultFile = "simple_test_res.mat",
 //     simulationOptions = "startTime = 0.0, stopTime = 0.5, numberOfIntervals = 500, tolerance = 1e-06, method = 'dassl', fileNamePrefix = 'simple_test', options = '', outputFormat = 'mat', variableFilter = '.*', cflags = '', simflags = ''",
-//     messages = "stdout            | info    | Linearization will be performed at point of time: 0.500000
+//     messages = "LOG_STDOUT        | info    | Linearization will be performed at point of time: 0.500000
 // LOG_SUCCESS       | info    | The initialization finished successfully without homotopy method.
 // LOG_SUCCESS       | info    | The simulation finished successfully.
-// stdout            | info    | Linear model is created.
+// LOG_STDOUT        | info    | Linear model is created.
 // "
 // end SimulationResult;
 // "Warning: The initial conditions are not fully specified. For more information set -d=initialization. In OMEdit Tools->Options->Simulation->Show additional information from the initialization process, in OMNotebook call setCommandLineOptions(\"-d=initialization\").

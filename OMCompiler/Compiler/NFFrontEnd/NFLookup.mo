@@ -311,19 +311,22 @@ function lookupCref
   output LookupState state;
 protected
   InstNode node;
+  Boolean in_enclosing;
 algorithm
   (foundCref, foundScope, state) := match cref
     case Absyn.ComponentRef.CREF_IDENT()
       algorithm
-        (_, foundCref, foundScope, state) := lookupSimpleCref(cref.name, cref.subscripts, scope, context);
+        (_, foundCref, foundScope, in_enclosing, state) := lookupSimpleCref(cref.name, cref.subscripts, scope, context);
+        state := LookupState.checkCrefVariability(foundCref, in_enclosing, context, state);
       then
         (foundCref, foundScope, state);
 
     case Absyn.ComponentRef.CREF_QUAL()
       algorithm
-        (node, foundCref, foundScope, state) := lookupSimpleCref(cref.name, cref.subscripts, scope, context);
+        (node, foundCref, foundScope, in_enclosing, state) := lookupSimpleCref(cref.name, cref.subscripts, scope, context);
         (foundCref, foundScope, state) :=
           lookupCrefInNode(cref.componentRef, node, foundCref, foundScope, state, context);
+        state := LookupState.checkCrefVariability(foundCref, in_enclosing, context, state);
       then
         (foundCref, foundScope, state);
 
@@ -398,9 +401,15 @@ algorithm
       true := InstNode.isInner(innerNode);
       return;
     else
-      // Continue looking in the instance parent's scope.
-      prev_scope := cur_scope;
-      cur_scope := InstNode.instanceParent(cur_scope);
+      if InstNode.isRootClass(cur_scope) then
+        // Stop looking if we reach the root class.
+        prev_scope := InstNode.topScope(cur_scope);
+        cur_scope := InstNode.EMPTY_NODE();
+      else
+        // Otherwise continue looking in the instance parent's scope.
+        prev_scope := cur_scope;
+        cur_scope := InstNode.instanceParent(cur_scope);
+      end if;
     end try;
   end while;
 
@@ -459,9 +468,10 @@ algorithm
             // If we're in an annotation, check in the special scope where
             // annotation classes are defined.
             cur_scope := InstNode.annotationScope(cur_scope);
-          elseif not loaded then
-            // If we haven't already tried, try to load a library with that name
-            // and then try to look it up in the top scope again.
+          elseif not loaded and not require_builtin then
+            // If we haven't already tried and we're not trying to find a
+            // builtin name, try to load a library with that name and then try
+            // to look it up in the top scope again.
             loaded := true;
             loadLibrary(name, cur_scope);
           else
@@ -766,10 +776,12 @@ function lookupSimpleCref
   output InstNode node;
   output ComponentRef cref;
   output InstNode foundScope = scope;
+  output Boolean inEnclosingScope = false;
   output LookupState state;
 protected
   Boolean is_import, require_builtin = false;
   Boolean loaded = false;
+  Boolean is_enclosing = false;
 algorithm
   try
     (node, cref, state) := lookupSimpleBuiltinCref(name, subs);
@@ -819,9 +831,10 @@ algorithm
               // If we're in an annotation, check in the special scope where
               // annotation classes are defined.
               foundScope := InstNode.annotationScope(foundScope);
-            elseif not loaded then
-              // If we haven't already tried, try to load a library with that
-              // name and then try to look it up in the top scope again.
+            elseif not loaded and not require_builtin then
+              // If we haven't already tried and we're not trying to find a
+              // builtin name, try to load a library with that name and then try
+              // to look it up in the top scope again.
               loaded := true;
               loadLibrary(name, foundScope);
             else
@@ -830,6 +843,7 @@ algorithm
             end if;
           else
             // Look in the next enclosing scope.
+            inEnclosingScope := not InstNode.isImplicit(foundScope);
             foundScope := InstNode.parentScope(foundScope);
           end if;
         end if;
@@ -896,18 +910,19 @@ function lookupCrefInNode
   input InstContext.Type context;
 protected
   InstNode scope;
-  InstNode n;
+  InstNode n, cls_node;
   String name;
   Class cls;
-  Boolean is_import;
+  Boolean is_import, scope_is_class;
 algorithm
   if LookupState.isError(state) then
     return;
   end if;
 
   scope := node;
+  scope_is_class := InstNode.isClass(scope);
 
-  if InstNode.isClass(scope) then
+  if scope_is_class then
     scope := Inst.instPackage(node, context);
 
     if InstNode.isPartial(scope) and not InstContext.inRelaxed(context) then
@@ -921,13 +936,20 @@ algorithm
   end if;
 
   name := AbsynUtil.crefFirstIdent(cref);
-  cls := InstNode.getClass(scope);
+  cls_node := InstNode.classScope(scope);
+
+  if InstNode.isEmpty(cls_node) then
+    foundCref := ComponentRef.fromAbsynCref(cref, foundCref);
+    return;
+  end if;
+
+  cls := InstNode.getClass(cls_node);
 
   try
     (n, is_import) := Class.lookupElement(name, cls);
   else
     true := InstNode.isComponent(node);
-    true := Class.isExpandableConnectorClass(cls);
+    true := Class.isExpandableConnectorClass(cls) or InstContext.inInstanceAPI(context);
     foundCref := ComponentRef.fromAbsynCref(cref, foundCref);
     return;
   end try;
@@ -939,17 +961,24 @@ algorithm
   end if;
 
   (n, foundCref, foundScope) := resolveInnerCref(n, foundCref, foundScope);
-  state := LookupState.next(n, state);
+  foundCref := ComponentRef.fromAbsyn(n, AbsynUtil.crefFirstSubs(cref), foundCref);
+
+  if scope_is_class and not InstContext.inRelaxed(context) and
+     LookupState.isNonConstantComponent(n) then
+    // An element found in a non-package must be encapsulated. So if we find a
+    // non-constant component in a class it's an error, since packages may only
+    // contain constant components and components can't be encapsulated.
+    state := LookupState.ERROR(LookupState.NON_ENCAPSULATED());
+    return;
+  else
+    state := LookupState.next(n, state);
+  end if;
 
   (foundCref, foundScope, state) := match cref
-    case Absyn.ComponentRef.CREF_IDENT()
-      then (ComponentRef.fromAbsyn(n, cref.subscripts, foundCref), foundScope, state);
+    case Absyn.ComponentRef.CREF_IDENT() then (foundCref, foundScope, state);
 
     case Absyn.ComponentRef.CREF_QUAL()
-      algorithm
-        foundCref := ComponentRef.fromAbsyn(n, cref.subscripts, foundCref);
-      then
-        lookupCrefInNode(cref.componentRef, n, foundCref, foundScope, state, context);
+      then lookupCrefInNode(cref.componentRef, n, foundCref, foundScope, state, context);
   end match;
 end lookupCrefInNode;
 

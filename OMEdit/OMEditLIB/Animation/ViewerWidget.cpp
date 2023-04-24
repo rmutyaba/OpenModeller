@@ -88,12 +88,14 @@ ViewerWidget::ViewerWidget(QWidget* parent, Qt::WindowFlags flags)
   mpGraphicsWindow = new osgViewer::GraphicsWindowEmbedded(x(), y(), width(), height());
   mpViewer = new Viewer;
   mpSceneView = new osgViewer::View();
+  mpFrameMutex = new OpenThreads::Mutex();
   mpAnimationWidget = qobject_cast<AbstractAnimationWindow*>(parent);
+  mpSelectedVisualizer = nullptr;
   // add a scene to viewer
   mpViewer->addView(mpSceneView);
   // get the viewer widget
   osg::ref_ptr<osg::Camera> camera = mpSceneView->getCamera();
-  camera->setGraphicsContext(mpGraphicsWindow);
+  camera->setGraphicsContext(mpGraphicsWindow.get());
   camera->setClearColor(osg::Vec4(0.95, 0.95, 0.95, 1.0));
   camera->setViewport(new osg::Viewport(0, 0, width(), height()));
   camera->setProjectionMatrixAsPerspective(30.0f, static_cast<double>(width()/2) / static_cast<double>(height()/2), 1.0f, 10000.0f);
@@ -120,31 +122,51 @@ ViewerWidget::ViewerWidget(QWidget* parent, Qt::WindowFlags flags)
 
 /*!
  * \brief ViewerWidget::paintEvent
- * Reimplementation of the paintEvent.\n
+ * Reimplementation of QOpenGLWidget::paintEvent().
  * \sa ViewerWidget::paintGL()
  */
 void ViewerWidget::paintEvent(QPaintEvent* /* paintEvent */)
 {
+  paintGL();
+}
+
+/*!
+ * \brief ViewerWidget::paintGL
+ * Reimplementation of QOpenGLWidget::paintGL().
+ * \note Synchronized frame rendering can lead to a deadlock
+ *       in situations where a new paint event is fired while
+ *       a frame is currently being rendered, and specifically
+ *       MessagesWidget::addPendingMessage() shall be used instead of
+ *       MessagesWidget::addGUIMessage() when #mpFrameMutex is locked.
+ * \sa ViewerWidget::paintEvent()
+ * \sa ViewerWidget::frame()
+ */
+void ViewerWidget::paintGL()
+{
+  mpFrameMutex->lock();
+  frame();
+  mpFrameMutex->unlock();
+  MessagesWidget::instance()->showPendingMessages();
+}
+
+/*!
+ * \brief ViewerWidget::frame
+ * Renders the animation frame.
+ * \sa ViewerWidget::paintGL()
+ */
+void ViewerWidget::frame()
+{
   makeCurrent();
   QPainter painter(this);
   painter.setRenderHint(QPainter::Antialiasing);
-  paintGL();
+  mpViewer->frame();
   painter.end();
   doneCurrent();
 }
 
 /*!
- * \brief ViewerWidget::paintGL
- * Renders the animation frame.
- * \sa ViewerWidget::paintEvent()
- */
-void ViewerWidget::paintGL()
-{
-  mpViewer->frame();
-}
-
-/*!
  * \brief ViewerWidget::resizeGL
+ * Reimplementation of QOpenGLWidget::resizeGL().
  * Resizes the graphics window.
  * \param width
  * \param height
@@ -202,6 +224,7 @@ void ViewerWidget::mousePressEvent(QMouseEvent *event)
   // 2 = middle mouse button
   // 3 = right mouse button
   unsigned int button = 0;
+  int pixelRatio = qCeil(qApp->devicePixelRatio());
   switch (event->button()) {
     case Qt::LeftButton:
       button = 1;
@@ -213,7 +236,7 @@ void ViewerWidget::mousePressEvent(QMouseEvent *event)
       button = 3;
       if (event->modifiers() == Qt::ShiftModifier) {
         //qt counts pixels from upper left corner and osg from bottom left corner
-        pickVisualizer(event->x(), this->height() - event->y());
+        pickVisualizer(event->x() * pixelRatio, (this->height() - event->y()) * pixelRatio);
         showVisualizerPickContextMenu(event->pos());
         return;
       }
@@ -221,7 +244,6 @@ void ViewerWidget::mousePressEvent(QMouseEvent *event)
     default:
       break;
   }
-  int pixelRatio = qCeil(qApp->devicePixelRatio());
   getEventQueue()->mouseButtonPress(static_cast<float>(event->x() * pixelRatio), static_cast<float>(event->y() * pixelRatio), button);
 }
 
@@ -233,18 +255,19 @@ void ViewerWidget::mousePressEvent(QMouseEvent *event)
  */
 void ViewerWidget::pickVisualizer(int x, int y)
 {
+  mpSelectedVisualizer = nullptr;
   //std::cout<<"pickVisualizer "<<x<<" and "<<y<<std::endl;
   osgUtil::LineSegmentIntersector::Intersections intersections;
   if (mpSceneView->computeIntersections(mpSceneView->getCamera(), osgUtil::Intersector::WINDOW, x, y, intersections)) {
     //take the first intersection with a facette only
     osgUtil::LineSegmentIntersector::Intersections::const_iterator hitr = intersections.cbegin();
-
-    if (!hitr->nodePath.empty() && !hitr->nodePath.back()->getName().empty()) {
-      mSelectedVisualizer = hitr->nodePath.back()->getName();
-      //std::cout<<"Object identified by name "<<mSelectedVisualizer<<std::endl;
+    constexpr osg::NodePath::size_type lvl = 2;
+    if (hitr->nodePath.size() > lvl && !hitr->nodePath.at(lvl)->getName().empty()) {
+      mpSelectedVisualizer = mpAnimationWidget->getVisualization()->getBaseData()->getVisualizerObjectByID(hitr->nodePath.at(lvl)->getName());
+      //std::cout<<"Object identified by name "<<mpSelectedVisualizer->_id<<std::endl;
     } else if (hitr->drawable.valid()) {
-      mSelectedVisualizer = hitr->drawable->className();
-      //std::cout<<"Object identified by its drawable "<<mSelectedVisualizer<<std::endl;
+      mpSelectedVisualizer = mpAnimationWidget->getVisualization()->getBaseData()->getVisualizerObjectByID(hitr->drawable->className());
+      //std::cout<<"Object identified by its drawable "<<mpSelectedVisualizer->_id<<std::endl;
     }
   }
 }
@@ -255,7 +278,7 @@ void ViewerWidget::pickVisualizer(int x, int y)
  */
 void ViewerWidget::showVisualizerPickContextMenu(const QPoint& pos)
 {
-  QString name = QString::fromStdString(mSelectedVisualizer);
+  QString name = mpSelectedVisualizer ? QString::fromStdString(mpSelectedVisualizer->_id) : QString();
   //std::cout<<"SHOW CONTEXT "<<name.toStdString()<<" compare "<<QString::compare(name,QString(""))<< std::endl;
 
   // The context widget
@@ -263,26 +286,27 @@ void ViewerWidget::showVisualizerPickContextMenu(const QPoint& pos)
   QMenu visualizerMenu(name, this);
 
   visualizerMenu.setIcon(QIcon(":/Resources/icons/animation.svg"));
-  QAction action0(QIcon(":/Resources/icons/reset.svg"), tr("Reset Transparency and Texture"), this);
+  QAction action0(QIcon(":/Resources/icons/reset.svg"), tr("Reset Visual Properties"), this);
   QAction action1(QIcon(":/Resources/icons/transparency.svg"), tr("Change Transparency"), this);
   QAction action2(QIcon(":/Resources/icons/invisible.svg"), tr("Make Visualizer Invisible"), this);
   QAction action3(QIcon(":/Resources/icons/changeColor.svg"), tr("Change Color"), this);
-  QAction action4(QIcon(":/Resources/icons/checkered.svg"), tr("Apply Checker Texture"), this);
-  QAction action5(QIcon(":/Resources/icons/texture.svg"), tr("Apply Custom Texture"), this);
-  QAction action6(QIcon(":/Resources/icons/undo.svg"), tr("Remove Texture"), this);
+  QAction action4(QIcon(":/Resources/icons/specularity.svg"), tr("Change Specularity"), this);
+  QAction action5(QIcon(":/Resources/icons/checkered.svg"), tr("Apply Checker Texture"), this);
+  QAction action6(QIcon(":/Resources/icons/texture.svg"), tr("Apply Custom Texture"), this);
+  QAction action7(QIcon(":/Resources/icons/undo.svg"), tr("Remove Texture"), this);
 
-  connect(&action0, SIGNAL(triggered()), this, SLOT(resetTransparencyAndTextureForAllVisualizers()));
+  connect(&action0, SIGNAL(triggered()), this, SLOT(resetVisualPropertiesForAllVisualizers()));
   connect(&action1, SIGNAL(triggered()), this, SLOT(changeVisualizerTransparency()));
   connect(&action2, SIGNAL(triggered()), this, SLOT(makeVisualizerInvisible()));
   connect(&action3, SIGNAL(triggered()), this, SLOT(changeVisualizerColor()));
-  connect(&action4, SIGNAL(triggered()), this, SLOT(applyCheckerTexture()));
-  connect(&action5, SIGNAL(triggered()), this, SLOT(applyCustomTexture()));
-  connect(&action6, SIGNAL(triggered()), this, SLOT(removeTexture()));
+  connect(&action4, SIGNAL(triggered()), this, SLOT(changeVisualizerSpec()));
+  connect(&action5, SIGNAL(triggered()), this, SLOT(applyCheckerTexture()));
+  connect(&action6, SIGNAL(triggered()), this, SLOT(applyCustomTexture()));
+  connect(&action7, SIGNAL(triggered()), this, SLOT(removeTexture()));
 
   // If a visualizer is picked, one can change its properties
-  AbstractVisualizerObject* visualizer = nullptr;
-  if ((visualizer = mpAnimationWidget->getVisualization()->getBaseData()->getVisualizerObjectByID(mSelectedVisualizer))) {
-    action2.setText(tr((std::string("Make ") + visualizer->getVisualizerType() + " Invisible").c_str()));
+  if (mpSelectedVisualizer) {
+    action2.setText(tr((std::string("Make ") + mpSelectedVisualizer->getVisualizerType() + " Invisible").c_str()));
     contextMenu.addMenu(&visualizerMenu);
   }
 
@@ -291,42 +315,32 @@ void ViewerWidget::showVisualizerPickContextMenu(const QPoint& pos)
   visualizerMenu.addAction(&action2);
   visualizerMenu.addSeparator();
   visualizerMenu.addAction(&action3);
-  visualizerMenu.addSeparator();
   visualizerMenu.addAction(&action4);
+  visualizerMenu.addSeparator();
   visualizerMenu.addAction(&action5);
   visualizerMenu.addAction(&action6);
+  visualizerMenu.addAction(&action7);
 
   contextMenu.exec(this->mapToGlobal(pos));
 }
 
 /*!
  * \brief ViewerWidget::changeVisualizerTransparency
- * changes the transparency selection of a visualizer
+ * opens a number dialog and selects a new transparency for the visualizer
  */
 void ViewerWidget::changeVisualizerTransparency()
 {
-  AbstractVisualizerObject* visualizer = nullptr;
-  if ((visualizer = mpAnimationWidget->getVisualization()->getBaseData()->getVisualizerObjectByID(mSelectedVisualizer))) {
-    if (visualizer->isShape()) {
-      ShapeObject* shape = static_cast<ShapeObject*>(visualizer);
-      if (shape->_type.compare("dxf") == 0) {
-        QString msg = tr("Transparency is not applicable for DXF-Files.");
-        MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, msg,
-                                                              Helper::scriptingKind, Helper::notificationLevel));
-        mSelectedVisualizer = "";
-        return;
-      }
-    }
+  if (mpSelectedVisualizer) {
     bool ok;
     const int min = 0, max = 100, step = 1; // Unit: [%]
-    const int currentTransparency = visualizer->getTransparency() * (max - min) + min;
+    const int currentTransparency = mpSelectedVisualizer->getVisualProperties()->getTransparency().get() * (max - min) + min;
     const int transparency = QInputDialog::getInt(this, Helper::chooseTransparency, Helper::percentageLabel,
                                                   currentTransparency, min, max, step, &ok);
     if (ok) { // Picked transparency is not OK if the user cancels the dialog
-      visualizer->setTransparency((float) (transparency - min) / (max - min));
-      mpAnimationWidget->getVisualization()->modifyVisualizer(mSelectedVisualizer);
+      mpSelectedVisualizer->getVisualProperties()->getTransparency().set((float) (transparency - min) / (max - min));
+      mpAnimationWidget->getVisualization()->getBaseData()->modifyVisualizer(mpSelectedVisualizer);
     }
-    mSelectedVisualizer = "";
+    mpSelectedVisualizer = nullptr;
   }
 }
 
@@ -336,21 +350,10 @@ void ViewerWidget::changeVisualizerTransparency()
  */
 void ViewerWidget::makeVisualizerInvisible()
 {
-  AbstractVisualizerObject* visualizer = nullptr;
-  if ((visualizer = mpAnimationWidget->getVisualization()->getBaseData()->getVisualizerObjectByID(mSelectedVisualizer))) {
-    if (visualizer->isShape()) {
-      ShapeObject* shape = static_cast<ShapeObject*>(visualizer);
-      if (shape->_type.compare("dxf") == 0) {
-        QString msg = tr("Invisibility is not applicable for DXF-Files.");
-        MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, msg,
-                                                              Helper::scriptingKind, Helper::notificationLevel));
-        mSelectedVisualizer = "";
-        return;
-      }
-    }
-    visualizer->setTransparency(1.0);
-    mpAnimationWidget->getVisualization()->modifyVisualizer(mSelectedVisualizer);
-    mSelectedVisualizer = "";
+  if (mpSelectedVisualizer) {
+    mpSelectedVisualizer->getVisualProperties()->getTransparency().set(1.0);
+    mpAnimationWidget->getVisualization()->getBaseData()->modifyVisualizer(mpSelectedVisualizer);
+    mpSelectedVisualizer = nullptr;
   }
 }
 
@@ -360,25 +363,34 @@ void ViewerWidget::makeVisualizerInvisible()
  */
 void ViewerWidget::changeVisualizerColor()
 {
-  AbstractVisualizerObject* visualizer = nullptr;
-  if ((visualizer = mpAnimationWidget->getVisualization()->getBaseData()->getVisualizerObjectByID(mSelectedVisualizer))) {
-    if (visualizer->isShape()) {
-      ShapeObject* shape = static_cast<ShapeObject*>(visualizer);
-      if (shape->_type.compare("dxf") == 0) {
-        QString msg = tr("Changing the color is not applicable for DXF-Files.");
-        MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, msg,
-                                                              Helper::scriptingKind, Helper::notificationLevel));
-        mSelectedVisualizer = "";
-        return;
-      }
-    }
-    const QColor currentColor = visualizer->getColor();
+  if (mpSelectedVisualizer) {
+    const QColor currentColor = mpSelectedVisualizer->getVisualProperties()->getColor().get();
     const QColor color = QColorDialog::getColor(currentColor, this, Helper::chooseColor);
     if (color.isValid()) { // Picked color is invalid if the user cancels the dialog
-      visualizer->setColor(color);
-      mpAnimationWidget->getVisualization()->modifyVisualizer(mSelectedVisualizer);
+      mpSelectedVisualizer->getVisualProperties()->getColor().set(color);
+      mpAnimationWidget->getVisualization()->getBaseData()->modifyVisualizer(mpSelectedVisualizer);
     }
-    mSelectedVisualizer = "";
+    mpSelectedVisualizer = nullptr;
+  }
+}
+
+/*!
+ * \brief ViewerWidget::changeVisualizerSpec
+ * opens a number dialog and selects a new specular coefficient for the visualizer
+ */
+void ViewerWidget::changeVisualizerSpec()
+{
+  if (mpSelectedVisualizer) {
+    bool ok;
+    const int min = 0, max = 100, step = 1; // Unit: [%]
+    const int currentSpecular = mpSelectedVisualizer->getVisualProperties()->getSpecular().get() * (max - min) + min;
+    const int specular = QInputDialog::getInt(this, Helper::chooseSpecularity, Helper::percentageLabel,
+                                              currentSpecular, min, max, step, &ok);
+    if (ok) { // Picked specular coefficient is not OK if the user cancels the dialog
+      mpSelectedVisualizer->getVisualProperties()->getSpecular().set((float) (specular - min) / (max - min));
+      mpAnimationWidget->getVisualization()->getBaseData()->modifyVisualizer(mpSelectedVisualizer);
+    }
+    mpSelectedVisualizer = nullptr;
   }
 }
 
@@ -388,21 +400,20 @@ void ViewerWidget::changeVisualizerColor()
  */
 void ViewerWidget::applyCheckerTexture()
 {
-  AbstractVisualizerObject* visualizer = nullptr;
-  if ((visualizer = mpAnimationWidget->getVisualization()->getBaseData()->getVisualizerObjectByID(mSelectedVisualizer))) {
-    if (visualizer->isShape()) {
-      ShapeObject* shape = static_cast<ShapeObject*>(visualizer);
-      if (shape->_type.compare("dxf") == 0 or shape->_type.compare("stl") == 0) {
-        QString msg = tr("Texture feature is not applicable for CAD-Files.");
+  if (mpSelectedVisualizer) {
+    if (mpSelectedVisualizer->isShape()) {
+      ShapeObject* shape = mpSelectedVisualizer->asShape();
+      if (isSimpleCADType(shape->_type)) {
+        QString msg = tr("Texture feature is not applicable for %1 files.").arg(shape->_type.c_str());
         MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, msg,
                                                               Helper::scriptingKind, Helper::notificationLevel));
-        mSelectedVisualizer = "";
+        mpSelectedVisualizer = nullptr;
         return;
       }
     }
-    visualizer->setTextureImagePath(":/Resources/bitmaps/check.png");
-    mpAnimationWidget->getVisualization()->modifyVisualizer(mSelectedVisualizer);
-    mSelectedVisualizer = "";
+    mpSelectedVisualizer->getVisualProperties()->getTextureImagePath().set(":/Resources/bitmaps/check.png");
+    mpAnimationWidget->getVisualization()->getBaseData()->modifyVisualizer(mpSelectedVisualizer);
+    mpSelectedVisualizer = nullptr;
   }
 }
 
@@ -412,15 +423,14 @@ void ViewerWidget::applyCheckerTexture()
  */
 void ViewerWidget::applyCustomTexture()
 {
-  AbstractVisualizerObject* visualizer = nullptr;
-  if ((visualizer = mpAnimationWidget->getVisualization()->getBaseData()->getVisualizerObjectByID(mSelectedVisualizer))) {
-    if (visualizer->isShape()) {
-      ShapeObject* shape = static_cast<ShapeObject*>(visualizer);
-      if (shape->_type.compare("dxf") == 0 or shape->_type.compare("stl") == 0) {
-        QString msg = tr("Texture feature is not applicable for CAD-Files.");
+  if (mpSelectedVisualizer) {
+    if (mpSelectedVisualizer->isShape()) {
+      ShapeObject* shape = mpSelectedVisualizer->asShape();
+      if (isSimpleCADType(shape->_type)) {
+        QString msg = tr("Texture feature is not applicable for %1 files.").arg(shape->_type.c_str());
         MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, msg,
                                                               Helper::scriptingKind, Helper::notificationLevel));
-        mSelectedVisualizer = "";
+        mpSelectedVisualizer = nullptr;
         return;
       }
     }
@@ -428,10 +438,10 @@ void ViewerWidget::applyCustomTexture()
     const QString fileName = StringHandler::getOpenFileName(this, QString("%1 – %2").arg(Helper::applicationName).arg(Helper::chooseFile),
                                                             (QString*) currentFileName, Helper::bitmapFileTypes, nullptr);
     if (!fileName.isEmpty()) { // Picked file name is empty if the user cancels the dialog
-      visualizer->setTextureImagePath(fileName.toStdString());
-      mpAnimationWidget->getVisualization()->modifyVisualizer(mSelectedVisualizer);
+      mpSelectedVisualizer->getVisualProperties()->getTextureImagePath().set(fileName.toStdString());
+      mpAnimationWidget->getVisualization()->getBaseData()->modifyVisualizer(mpSelectedVisualizer);
     }
-    mSelectedVisualizer = "";
+    mpSelectedVisualizer = nullptr;
   }
 }
 
@@ -441,44 +451,32 @@ void ViewerWidget::applyCustomTexture()
  */
 void ViewerWidget::removeTexture()
 {
-  AbstractVisualizerObject* visualizer = nullptr;
-  if ((visualizer = mpAnimationWidget->getVisualization()->getBaseData()->getVisualizerObjectByID(mSelectedVisualizer))) {
-    if (visualizer->isShape()) {
-      ShapeObject* shape = static_cast<ShapeObject*>(visualizer);
-      if (shape->_type.compare("dxf") == 0 or shape->_type.compare("stl") == 0) {
-        QString msg = tr("Texture feature is not applicable for CAD-Files.");
+  if (mpSelectedVisualizer) {
+    if (mpSelectedVisualizer->isShape()) {
+      ShapeObject* shape = mpSelectedVisualizer->asShape();
+      if (isSimpleCADType(shape->_type)) {
+        QString msg = tr("Texture feature is not applicable for %1 files.").arg(shape->_type.c_str());
         MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, msg,
                                                               Helper::scriptingKind, Helper::notificationLevel));
-        mSelectedVisualizer = "";
+        mpSelectedVisualizer = nullptr;
         return;
       }
     }
-    visualizer->setTextureImagePath("");
-    mpAnimationWidget->getVisualization()->modifyVisualizer(mSelectedVisualizer);
-    mSelectedVisualizer = "";
+    mpSelectedVisualizer->getVisualProperties()->getTextureImagePath().set("");
+    mpAnimationWidget->getVisualization()->getBaseData()->modifyVisualizer(mpSelectedVisualizer);
+    mpSelectedVisualizer = nullptr;
   }
 }
 
 /*!
- * \brief ViewerWidget::resetTransparencyAndTextureForAllVisualizers
- * sets all transparency and texture settings back to default
+ * \brief ViewerWidget::resetVisualPropertiesForAllVisualizers
+ * sets all visual properties back to default
  */
-void ViewerWidget::resetTransparencyAndTextureForAllVisualizers()
+void ViewerWidget::resetVisualPropertiesForAllVisualizers()
 {
-  std::vector<ShapeObject>& shapes = mpAnimationWidget->getVisualization()->getBaseData()->_shapes;
-  std::vector<VectorObject>& vectors = mpAnimationWidget->getVisualization()->getBaseData()->_vectors;
-  std::vector<std::reference_wrapper<AbstractVisualizerObject>> visualizers;
-  visualizers.reserve(shapes.size() + vectors.size());
-  for (ShapeObject& shape : shapes) {
-    visualizers.push_back(shape);
-  }
-  for (VectorObject& vector : vectors) {
-    visualizers.push_back(vector);
-  }
-  for (AbstractVisualizerObject& visualizer : visualizers) {
-    visualizer.setTransparency(0.0);
-    visualizer.setTextureImagePath("");
-    mpAnimationWidget->getVisualization()->modifyVisualizer(visualizer._id);
+  for (AbstractVisualizerObject& visualizer : mpAnimationWidget->getVisualization()->getBaseData()->getVisualizerObjects()) {
+    visualizer.getVisualProperties()->resetVisualProperties();
+    mpAnimationWidget->getVisualization()->getBaseData()->modifyVisualizer(visualizer);
   }
 }
 
@@ -502,7 +500,7 @@ void ViewerWidget::mouseReleaseEvent(QMouseEvent *event)
       break;
     case Qt::RightButton:
       button = 3;
-      mSelectedVisualizer = "";
+      mpSelectedVisualizer = nullptr;
       break;
     default:
       break;

@@ -1296,6 +1296,21 @@ algorithm
   end match;
 end setFixedAttr;
 
+public function getFixedAttr "
+  retrieves the protected attribute form VariableAttributes."
+  input Option<DAE.VariableAttributes> attr;
+  output Option<DAE.Exp> isFixed;
+algorithm
+  isFixed := match(attr)
+    case (SOME(DAE.VAR_ATTR_REAL(fixed=isFixed))) then isFixed;
+    case (SOME(DAE.VAR_ATTR_INT(fixed=isFixed))) then isFixed;
+    case (SOME(DAE.VAR_ATTR_BOOL(fixed=isFixed))) then isFixed;
+    case (SOME(DAE.VAR_ATTR_STRING(fixed=isFixed))) then isFixed;
+    case (SOME(DAE.VAR_ATTR_ENUMERATION(fixed=isFixed))) then isFixed;
+    else NONE();
+  end match;
+end getFixedAttr;
+
 public function setFinalAttr "
   sets the start attribute. If NONE(), assumes Real attributes."
   input Option<DAE.VariableAttributes> attr;
@@ -1555,6 +1570,17 @@ algorithm
   DAE.TYPES_VAR(attributes = DAE.ATTR(variability = var)) := inVar;
   outIsParamOrConst := SCodeUtil.isParameterOrConst(var);
 end isParamOrConstVar;
+
+public function isConstVar
+  "Return true if variable has variability CONST."
+  input DAE.Var var;
+  output Boolean isConstVar = false;
+algorithm
+  isConstVar := match var.attributes.variability
+    case SCode.CONST() then true;
+    else false;
+  end match;
+end isConstVar;
 
 public function isNotParamOrConstVar
   input DAE.Var inVar;
@@ -5591,10 +5617,10 @@ public function printBindingSourceStr "prints a binding source as a string"
   output String str;
 algorithm
   str := match(bindingSource)
-    local
-    case(DAE.BINDING_FROM_DEFAULT_VALUE()) then "[DEFAULT VALUE]";
-    case(DAE.BINDING_FROM_DEFAULT_VALUE()) then "[RECORD SUBMOD]";
-    case(DAE.BINDING_FROM_START_VALUE()) then  "[START VALUE]";
+    case(DAE.BINDING_FROM_DEFAULT_VALUE())       then "[DEFAULT VALUE]";
+    case(DAE.BINDING_FROM_START_VALUE())         then "[START VALUE]";
+    case(DAE.BINDING_FROM_RECORD_SUBMODS())      then "[RECORD SUBMODS]";
+    case(DAE.BINDING_FROM_DERIVED_RECORD_DECL()) then "[DERIVED RECORD]";
   end match;
 end printBindingSourceStr;
 

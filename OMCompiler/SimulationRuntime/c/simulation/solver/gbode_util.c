@@ -240,6 +240,58 @@ void hermite_interpolation_b(double ta, double* fa, double tb, double* fb, doubl
 }
 
 /**
+ * @brief Hermite interpolation of specific vector components (only left derivative used)
+ *
+ * @param ta      Time value at the left hand side
+ * @param fa      Function values at the left hand side
+ * @param dfa     Derivative function values at the left hand side
+ * @param tb      Time value at the right hand side
+ * @param fb      Function values at the right hand side
+ * @param t       Time value at the interpolated time point
+ * @param f       Function values at the interpolated time point
+ * @param n       Size of vector f or size of index vector if non-NULL.
+ * @param idx     Index vector, can be NULL.
+ *                Specifies which parts of f should be interpolated.
+ */
+void hermite_interpolation_a(double ta, double* fa, double* dfa, double tb, double* fb, double t, double* f, int n, int* idx)
+{
+  double tat,tbt,tbta, h00, h01, h10;
+  int i, ii;
+
+  // omit division by zero
+  if (fabs(tb-ta) <= GBODE_EPSILON) {
+    if(idx != NULL) {
+      copyVector_gbf(f, fb, n, idx);
+    } else {
+      memcpy(f, fb, n*sizeof(double));
+    }
+    return;
+  }
+
+  tat  = (ta-t);
+  tbt  = (tb-t);
+  tbta = (tb-ta);
+  h01  = tat*tat/(tbta*tbta);
+  h00  = 1 - h01;
+  h10  = -tat*tbt/tbta;
+
+  if (idx == NULL) {
+    for (i=0; i<n; i++)
+    {
+      f[i] = h00*fa[i]+h01*fb[i]+h10*dfa[i];
+    }
+  } else {
+    for (ii=0; ii<n; ii++)
+    {
+      i = idx[ii];
+      f[i] = h00*fa[i]+h01*fb[i]+h10*dfa[i];
+    }
+  }
+
+  return;
+}
+
+/**
  * @brief Hermite interpolation of specific vector components
  *
  * @param interpolMethod
@@ -270,6 +322,9 @@ void gb_interpolation(enum GB_INTERPOL_METHOD interpolMethod, double ta, double*
       tableau->dense_output(tableau, fa, x, k, (t - ta)/(tb-ta), (tb - ta), f, nIdx, idx, nStates);
       break;
     }
+  case GB_INTERPOL_HERMITE_a:
+    hermite_interpolation_a(ta, fa, dfa, tb, fb, t, f, nIdx, idx);
+    break;
   case GB_INTERPOL_HERMITE_b:
     hermite_interpolation_b(ta, fa, tb, fb, dfb, t, f, nIdx, idx);
     break;
@@ -281,6 +336,7 @@ void gb_interpolation(enum GB_INTERPOL_METHOD interpolMethod, double ta, double*
     throwStreamPrint(NULL, "Not handled case in gb_interpolation. Unknown interpolation method %i.", interpolMethod);
   }
 }
+
 /**
  * @brief  Difference between linear and hermite interpolation at intermediate points.
  *
@@ -290,18 +346,17 @@ double error_interpolation_gb(DATA_GBODE* gbData, int nIdx, int* idx, double tol
   int i, ii;
   double errint = 0.0, errtol;
 
- if (gbData->interpolation == GB_INTERPOL_HERMITE_ERRCTRL || gbData->interpolation == GB_INTERPOL_HERMITE || gbData->interpolation == GB_INTERPOL_HERMITE_b ) {
-    linear_interpolation(gbData->timeLeft,  gbData->yLeft,
-                        gbData->timeRight, gbData->yRight,
-                        (gbData->timeLeft + gbData->timeRight)/2, gbData->y1,
-                         nIdx, idx);
- } else {
-   gb_interpolation(gbData->interpolation, gbData->timeLeft,  gbData->yLeft,  gbData->kLeft,
-                     gbData->timeRight, gbData->yRight, gbData->kRight,
-                     (gbData->timeLeft + gbData->timeRight)/2, gbData->y1,
-                      nIdx, idx, gbData->nStates, gbData->tableau, gbData->x, gbData->k);
-
- }
+  if (gbData->interpolation == GB_DENSE_OUTPUT_ERRCTRL || gbData->interpolation == GB_DENSE_OUTPUT) {
+    gb_interpolation(gbData->interpolation, gbData->timeLeft,  gbData->yLeft,  gbData->kLeft,
+                      gbData->timeRight, gbData->yRight, gbData->kRight,
+                      (gbData->timeLeft + gbData->timeRight)/2, gbData->y1,
+                        nIdx, idx, gbData->nStates, gbData->tableau, gbData->x, gbData->k);
+  } else {
+    hermite_interpolation_a(gbData->timeLeft,  gbData->yLeft,  gbData->kLeft,
+                            gbData->timeRight, gbData->yRight,
+                            (gbData->timeLeft + gbData->timeRight)/2, gbData->y1,
+                            nIdx, idx);
+  }
   hermite_interpolation(gbData->timeLeft,  gbData->yLeft,  gbData->kLeft,
                         gbData->timeRight, gbData->yRight, gbData->kRight,
                         (gbData->timeLeft + gbData->timeRight)/2, gbData->errest,
@@ -407,6 +462,38 @@ void projVector_gbf(double* a, double* b, int nIndx, int* indx) {
 /**
  * @brief Output debug information of the states and derivatives
  *
+ * that have been evaluated at the past accepted time points.
+ *
+ * @param stream   Prints only, if stream is active
+ * @param x        States at the past accepted time points
+ * @param k        Derivatives at the past accepted time points
+ * @param t        Past accepted time points
+ * @param nStates  Number of states
+ * @param size     Size of buffer
+ */
+void debugRingBufferSteps(enum LOG_STREAM stream, double* x, double* k, double *t, int nStates, int size) {
+
+  // If stream is not active do nothing
+  if (!ACTIVE_STREAM(stream)) return;
+
+  infoStreamPrint(stream, 1, "States and derivatives at past accepted time steps:");
+
+  int i;
+
+  infoStreamPrint(stream, 0, "states:");
+  for (i = 0; i < size; i++) {
+    printVector_gb(stream, "x", x + i * nStates, nStates, t[i]);
+  }
+  infoStreamPrint(stream, 0, "derivatives:");
+  for (i = 0; i < size; i++) {
+    printVector_gb(stream, "k", k + i * nStates, nStates, t[i]);
+  }
+  messageClose(stream);
+}
+
+/**
+ * @brief Output debug information of the states and derivatives
+ *
  * that have been evaluated at the intermediate points given by the
  * Butcher tableau.
  *
@@ -436,7 +523,9 @@ void debugRingBuffer(enum LOG_STREAM stream, double* x, double* k, int nStates, 
 }
 
 /**
- * @brief Prints a vector
+ * @brief Prints a vector to stream.
+ *
+ * If vector is larger than 1000 nothing is printed.
  *
  * @param stream  Prints only, if stream is active
  * @param name    Specific string to print (usually name of the vector)
@@ -452,14 +541,19 @@ void printVector_gb(enum LOG_STREAM stream, char name[], double* a, int n, doubl
   // This only works for number of states less than 10!
   // For large arrays, this is not a good output format!
   char row_to_print[40960];
-  sprintf(row_to_print, "%s(%8g) =\t", name, time);
-  for (int i=0;i<n;i++)
-    sprintf(row_to_print, "%s %18.12g", row_to_print, a[i]);
+  unsigned int bufSize = 40960;
+  unsigned int ct;
+  ct = snprintf(row_to_print, bufSize, "%s(%8g) =\t", name, time);
+  for (int i=0;i<n;i++) {
+    ct += snprintf(row_to_print+ct, bufSize-ct, "%18.12g", a[i]);
+  }
   infoStreamPrint(stream, 0, "%s", row_to_print);
 }
 
 /**
- * @brief Prints an integer vector
+ * @brief Prints an integer vector to stream.
+ *
+ * If vector is larger than 1000 nothing is printed.
  *
  * @param name    Specific string to print (usually name of the vector)
  * @param a       Integer vector to print
@@ -472,33 +566,18 @@ void printIntVector_gb(enum LOG_STREAM stream, char name[], int* a, int n, doubl
   if (!ACTIVE_STREAM(stream) || n>1000) return;
 
   char row_to_print[40960];
-  sprintf(row_to_print, "%s(%8g) =\t", name, time);
+  unsigned int bufSize = 40960;
+  unsigned int ct;
+  ct = snprintf(row_to_print, bufSize, "%s(%8g) =\t", name, time);
   for (int i=0;i<n;i++)
-    sprintf(row_to_print, "%s %d", row_to_print, a[i]);
+    ct += snprintf(row_to_print+ct, bufSize-ct, "%d ", a[i]);
   infoStreamPrint(stream, 0, "%s", row_to_print);
 }
 
 /**
- * @brief Prints a square matrix
+ * @brief Prints selected vector components given by an index vector.
  *
- * @param name    Specific string to print (usually name of the matrix)
- * @param a       Matrix to print
- * @param n       number of columns and rows
- * @param time    Time value
- */
-void printMatrix_gb(char name[], double* a, int n, double time) {
-  printf("\n%s at time: %g: \n ", name, time);
-  for (int i=0;i<n;i++)
-  {
-    for (int j=0;j<n;j++)
-      printf("%6g ", a[i*n + j]);
-    printf("\n");
-  }
-  printf("\n");
-}
-
-/**
- * @brief Prints selected vector components given by an index vector
+ * If more than 1000 elements should be printed do nothing.
  *
  * @param name    Specific string to print (usually name of the vector)
  * @param a       Vector to print
@@ -515,9 +594,11 @@ void printVector_gbf(enum LOG_STREAM stream, char name[], double* a, int n, doub
   // This only works for number of states less than 10!
   // For large arrays, this is not a good output format!
   char row_to_print[40960];
-  sprintf(row_to_print, "%s(%8g) =\t", name, time);
+  unsigned int bufSize = 40960;
+  unsigned int ct;
+  ct = snprintf(row_to_print, bufSize, "%s(%8g) =\t", name, time);
   for (int i=0;i<nIndx;i++)
-    sprintf(row_to_print, "%s %16.12g", row_to_print, a[indx[i]]);
+    ct += snprintf(row_to_print+ct, bufSize-ct, "%16.12g", a[indx[i]]);
   infoStreamPrint(stream, 0, "%s", row_to_print);
 }
 
@@ -565,39 +646,55 @@ void printSparseJacobianLocal(ANALYTIC_JACOBIAN* jacobian, const char* name) {
 /**
  * @brief Write information on the active fast states on file (activity diagram)
  *
- * @param gbData  Pointer to generik GBODE data struct.
- * @param event   If an event has happend, write zeros else ones
- * @param time    Actual time of reporting
+ * @param gbData       Pointer to generic GBODE data struct.
+ * @param event        If an event has happened, write zeros else ones
+ * @param time         Actual time of reporting
+ * @param rejectedType Type of rejection
+ *                     0  <= no rejection
+ *                     1  <= error of slow states greater than the tolerance
+ *                     2  <= interpolation error is too large
+ *                     3  <= rejected because solving the NLS failed
+ *                    -1  <= step is preliminary accepted but needs refinement
  */
-void dumpFastStates_gb(DATA_GBODE* gbData, modelica_boolean event, double time) {
-    char fastStates_row[4096];
-    sprintf(fastStates_row, "%15.10g %15.10g %15.10g %15.10g", time, gbData->err_slow, gbData->err_int, gbData->err_fast);
-    for (int i = 0; i < gbData->nStates; i++) {
-      if (event)
-        sprintf(fastStates_row, "%s 0", fastStates_row);
-      else
-        sprintf(fastStates_row, "%s 1", fastStates_row);
-    }
-    fprintf(gbData->gbfData->fastStatesDebugFile, "%s\n", fastStates_row);
+void dumpFastStates_gb(DATA_GBODE* gbData, modelica_boolean event, double time, int rejectedType) {
+  char fastStates_row[4096];
+  unsigned int bufSize = 4096;
+  unsigned int ct;
+  ct = snprintf(fastStates_row, bufSize, "%15.10g %2d %15.10g %15.10g %15.10g", time, rejectedType, gbData->err_slow, gbData->err_int, gbData->err_fast);
+  for (int i = 0; i < gbData->nStates; i++) {
+    if (event)
+      ct += snprintf(fastStates_row+ct, bufSize-ct, " 0");
+    else
+      ct += snprintf(fastStates_row+ct, bufSize-ct, " 1");
+  }
+  fprintf(gbData->gbfData->fastStatesDebugFile, "%s\n", fastStates_row);
 }
 
 /**
  * @brief Write information on the active fast states on file (activity diagram)
  *
- * @param gbData  Pointer to generik GBODE data struct.
+ * @param gbData  Pointer to generic GBODE data struct.
  * @param time    Actual time of reporting
+ * @param rejectedType Type of rejection
+ *                     0  <= no rejection
+ *                     1  <= error of slow states greater than the tolerance
+ *                     2  <= interpolation error is too large
+ *                     3  <= rejected because solving the NLS failed
+ *                    -1  <= step is preliminary accepted but needs refinement
  */
-void dumpFastStates_gbf(DATA_GBODE* gbData, double time) {
-  char fastStates_row[4096];
+void dumpFastStates_gbf(DATA_GBODE* gbData, double time, int rejectedType) {
+  char fastStates_row[40960];
+  unsigned int bufSize = 40960;
+  unsigned int ct;
   int i, ii;
-  sprintf(fastStates_row, "%15.10g %15.10g %15.10g %15.10g", time, gbData->err_slow, gbData->err_int, gbData->err_fast);
+  ct = snprintf(fastStates_row, bufSize, "%15.10g %2d %15.10g %15.10g %15.10g", time, rejectedType, gbData->err_slow, gbData->err_int, gbData->err_fast);
   for (i = 0, ii = 0; i < gbData->nStates;) {
     if (i == gbData->fastStatesIdx[ii]) {
-      sprintf(fastStates_row, "%s 1", fastStates_row);
+      ct += snprintf(fastStates_row+ct, bufSize-ct, " 1");
       i++;
-      ii++;
+      if (ii < gbData->nFastStates-1) ii++;
     } else {
-      sprintf(fastStates_row, "%s 0", fastStates_row);
+      ct += snprintf(fastStates_row+ct, bufSize-ct, " 0");
       i++;
     }
   }
@@ -617,24 +714,27 @@ modelica_boolean checkFastStatesChange(DATA_GBODE* gbData) {
   gbfData->nFastStates = gbData->nFastStates;
   gbfData->fastStatesIdx  = gbData->fastStatesIdx;
 
+  // check if number of fast states changed
   if (gbfData->nFastStates_old != gbData->nFastStates) {
-    if (ACTIVE_STREAM(LOG_SOLVER) && !fastStatesChange)
-    {
-      printIntVector_gb(LOG_SOLVER, "old fast States:", gbfData->fastStates_old, gbfData->nFastStates_old, gbfData->time);
-      printIntVector_gb(LOG_SOLVER, "new fast States:", gbData->fastStatesIdx, gbData->nFastStates, gbfData->time);
-    }
-    gbfData->nFastStates_old = gbData->nFastStates;
     fastStatesChange = TRUE;
   }
 
+  // look for changes in the ordering
   for (int k = 0; k < gbData->nFastStates; k++) {
     if (gbfData->fastStates_old[k] != gbData->fastStatesIdx[k]) {
-      if (ACTIVE_STREAM(LOG_SOLVER) && !fastStatesChange)
-      {
-        printIntVector_gb(LOG_SOLVER, "old fast States:", gbfData->fastStates_old, gbfData->nFastStates_old, gbfData->time);
-        printIntVector_gb(LOG_SOLVER, "new fast States:", gbData->fastStatesIdx, gbData->nFastStates, gbfData->time);
-      }
       fastStatesChange = TRUE;
+    }
+  }
+
+  if (ACTIVE_STREAM(LOG_SOLVER) && fastStatesChange)
+  {
+    printIntVector_gb(LOG_SOLVER, "old fast States:", gbfData->fastStates_old, gbfData->nFastStates_old, gbfData->time);
+    printIntVector_gb(LOG_SOLVER, "new fast States:", gbData->fastStatesIdx, gbData->nFastStates, gbfData->time);
+  }
+  // Update indices for the current fast states and corresponding counting
+  if (fastStatesChange) {
+    gbfData->nFastStates_old = gbData->nFastStates;
+    for (int k = 0; k < gbData->nFastStates; k++) {
       gbfData->fastStates_old[k] = gbData->fastStatesIdx[k];
     }
   }
@@ -663,28 +763,77 @@ void logSolverStats(enum LOG_STREAM stream, const char* name, double timeValue, 
 }
 
 /**
- * @brief Set solver stats.
+ * @brief Info message for GBODE replacement.
  *
- * @param solverStats   Pointer to solverStats to set.
- * @param stats         Values to set in solverStats.
+ * Dumps simulation flags to use to LOG_STDOUT.
+ *
+ * @param gbMethod  GBODE method to use.
+ * @param constant  If true use constant step size.
  */
-void setSolverStats(unsigned int* solverStats, SOLVERSTATS* stats) {
-  solverStats[0] = stats->nStepsTaken;
-  solverStats[1] = stats->nCallsODE;
-  solverStats[2] = stats->nCallsJacobian;
-  solverStats[3] = stats->nErrorTestFailures;
-  solverStats[4] = stats->nConvergenveTestFailures;
+void replacementString(enum GB_METHOD gbMethod, modelica_boolean constant) {
+  if (constant) {
+    infoStreamPrint(LOG_STDOUT, 1, "Use integration method GBODE with method '%s' and constant step size instead:", GB_METHOD_NAME[gbMethod]);
+    infoStreamPrint(LOG_STDOUT, 0, "Choose integration method '%s' in Simulation Setup->General and additional simulation flags '-%s=%s -%s=%s' in Simulation Setup->Simulation Flags.",
+                    SOLVER_METHOD_NAME[S_GBODE], FLAG_NAME[FLAG_SR], GB_METHOD_NAME[gbMethod], FLAG_NAME[FLAG_SR_CTRL], GB_CTRL_METHOD_NAME[GB_CTRL_CNST]);
+    infoStreamPrint(LOG_STDOUT, 0, "or");
+    infoStreamPrint(LOG_STDOUT, 0, "Simulation flags '-s=%s -%s=%s -%s=%s'.",
+                    SOLVER_METHOD_NAME[S_GBODE], FLAG_NAME[FLAG_SR], GB_METHOD_NAME[gbMethod], FLAG_NAME[FLAG_SR_CTRL], GB_CTRL_METHOD_NAME[GB_CTRL_CNST]);
+  } else {
+    infoStreamPrint(LOG_STDOUT, 1, "Use integration method GBODE with method '%s' instead:", GB_METHOD_NAME[gbMethod]);
+    infoStreamPrint(LOG_STDOUT, 0, "Choose integration method '%s' in Simulation Setup->General and additional simulation flags '-%s=%s' in Simulation Setup->Simulation Flags.",
+                    SOLVER_METHOD_NAME[S_GBODE], FLAG_NAME[FLAG_SR], GB_METHOD_NAME[gbMethod]);
+    infoStreamPrint(LOG_STDOUT, 0, "or");
+    infoStreamPrint(LOG_STDOUT, 0, "Simulation flags '-s=%s -%s=%s'.",
+                    SOLVER_METHOD_NAME[S_GBODE], FLAG_NAME[FLAG_SR], GB_METHOD_NAME[gbMethod]);
+  }
+  messageClose(LOG_STDOUT);
 }
 
 /**
- * @brief Set all solver stats to zero.
+ * @brief Display deprecation warning for integration methods replaced by GBODE.
  *
- * @param stats   Pointer to solver stats.
+ * Deprecated methods: heun, impeuler, trapezoid, imprungekutta, irksco, rungekuttaSsc
+ *
+ * @param solverMethod  Integration method.
  */
-void resetSolverStats(SOLVERSTATS* stats) {
-  stats->nStepsTaken = 0;
-  stats->nCallsODE = 0;
-  stats->nCallsJacobian = 0;
-  stats->nErrorTestFailures = 0;
-  stats->nConvergenveTestFailures = 0;
+void deprecationWarningGBODE(enum SOLVER_METHOD method) {
+  switch (method) {
+    case S_HEUN:
+    case S_IMPEULER:
+    case S_TRAPEZOID:
+    case S_IMPRUNGEKUTTA:
+    case S_IRKSCO:
+    case S_ERKSSC:
+      break;
+    default:
+      return;
+  }
+
+  warningStreamPrint(LOG_STDOUT, 1, "Integration method '%s' is deprecated and will be removed in a future version of OpenModelica.", SOLVER_METHOD_NAME[method]);
+  switch (method) {
+    case S_HEUN:
+      replacementString(RK_HEUN, TRUE);
+      break;
+    case S_IMPEULER:
+      replacementString(RK_IMPL_EULER, TRUE);
+      break;
+    case S_TRAPEZOID:
+      replacementString(RK_TRAPEZOID, TRUE);
+      break;
+    case S_IMPRUNGEKUTTA:
+      replacementString(RK_RADAU_IA_2, TRUE);
+      break;
+    case S_IRKSCO:
+      replacementString(RK_TRAPEZOID, FALSE);
+      break;
+    case S_ERKSSC:
+      replacementString(RK_RKSSC, FALSE);
+      break;
+    default:
+      throwStreamPrint(NULL, "Not reachable state");
+  }
+
+  infoStreamPrint(LOG_STDOUT, 0 , "See OpenModelica User's Guide section on GBODE for more details: https://www.openmodelica.org/doc/OpenModelicaUsersGuide/latest/solving.html#gbode");
+  messageClose(LOG_STDOUT);
+  return;
 }

@@ -2068,20 +2068,6 @@ external "builtin";
 annotation(preferredView="text");
 end instantiateModel;
 
-function buildOpenTURNSInterface "generates wrapper code for OpenTURNS"
-  input TypeName className;
-  input String pythonTemplateFile;
-  input Boolean showFlatModelica = false;
-  output String outPythonScript;
-  external "builtin";
-end buildOpenTURNSInterface;
-
-function runOpenTURNSPythonScript "runs OpenTURNS with the given python script returning the log file"
-  input String pythonScriptFile;
-  output String logOutputFile;
-  external "builtin";
-end runOpenTURNSPythonScript;
-
 function generateCode "The input is a function name for which C-code is generated and compiled into a dll/so"
   input TypeName className;
   output Boolean success;
@@ -2470,6 +2456,7 @@ function importFMU "Imports the Functional Mockup Unit
   input Boolean debugLogging = false "When true the FMU's debug output is printed.";
   input Boolean generateInputConnectors = true "When true creates the input connector pins.";
   input Boolean generateOutputConnectors = true "When true creates the output connector pins.";
+  input TypeName modelName = $TypeName(Default) "Name of the generated model. If default then the name is auto generated using FMU information.";
   output String generatedFileName "Returns the full path of the generated file.";
 external "builtin";
 annotation(preferredView="text");
@@ -2667,7 +2654,7 @@ external "builtin";
 annotation(preferredView="text");
 end copyClass;
 
-function linearize "creates a model with symbolic linearization matrixes"
+function linearize "creates a model with symbolic linearization matrices"
   input TypeName className "the class that should simulated";
   input Real startTime = "<default>" "the start time of the simulation. <default> = 0.0";
   input Real stopTime = 1.0 "the stop time of the simulation. <default> = 1.0";
@@ -2686,12 +2673,12 @@ function linearize "creates a model with symbolic linearization matrixes"
   output String linearizationResult;
 external "builtin";
 annotation(Documentation(info="<html>
-<p>Creates a model with symbolic linearization matrixes.</p>
-<p>At stopTime the linearization matrixes are evaluated and a modelica model is created.</p>
+<p>Creates a model with symbolic linearization matrices.</p>
+<p>At stopTime the linearization matrices are evaluated and a modelica model is created.</p>
 <p>The only required argument is the className, while all others have some default values.</p>
 <h2>Usage:</h2>
 <p><b>linearize</b>(<em>A</em>, stopTime=0.0);</p>
-<p>Creates the file \"linear_A.mo\" that contains the linearized matrixes at stopTime.</p>
+<p>Creates the file \"linear_A.mo\" that contains the linearized matrices at stopTime.</p>
 </html>", revisions="<html>
 <table>
 <tr><th>Revision</th><th>Author</th><th>Comment</th></tr>
@@ -3161,6 +3148,21 @@ annotation(
   preferredView="text");
 end getElementModifierNames;
 
+function setComponentModifierValue = setElementModifierValue;
+
+function setElementModifierValue
+  input TypeName className;
+  input TypeName elementName;
+  input ExpressionOrModification modifier;
+  output Boolean success;
+external "builtin";
+annotation(
+  Documentation(info="<html>
+  Sets a modifier on an element in a class definition.
+</html>"),
+  preferredView="text");
+end setElementModifierValue;
+
 function getElementModifierValue
   input TypeName className;
   input TypeName modifier;
@@ -3222,7 +3224,7 @@ function getInstantiatedParametersAndValues
 external "builtin";
 annotation(
   Documentation(info="<html>
-  <p>Returns the parameter names and values from the DAE.</p>
+  <p>Returns the top-level parameter names and values from the DAE.</p>
 </html>"),
   preferredView="text");
 end getInstantiatedParametersAndValues;
@@ -3293,6 +3295,18 @@ function getNthConnection "Returns the Nth connection.
 external "builtin";
 annotation(preferredView="text");
 end getNthConnection;
+
+function getConnectionList "returns an array of all connections including those within loops"
+  input TypeName className;
+  output String[:,:] result;
+external "builtin";
+annotation(
+  Documentation(info="<html>
+Returns a list of all connect equations including those in loops. For example:
+<pre>{{\"connection1.lhs\",\"connection1.rhs\"}, {\"connection2.lhs\",\"connection2.rhs\"}}</pre>
+</html>"),
+  preferredView="text");
+end getConnectionList;
 
 function getAlgorithmCount "Counts the number of Algorithm sections in a class."
   input TypeName class_;
@@ -4245,6 +4259,10 @@ function getClassInformation
   output String preferredView;
   output Boolean state;
   output String access;
+  output String versionDate;
+  output String versionBuild;
+  output String dateModified;
+  output String revisionId;
 external "builtin";
 annotation(
   Documentation(info="<html>
@@ -4398,6 +4416,49 @@ annotation(preferredView="text",Documentation(info="<html>
 <p>Runs the conversion script for a library on a selected package.</p>
 </html>"));
 end convertPackageToLibrary;
+
+function getModelInstance
+  "Dumps a model instance as a JSON string."
+  input TypeName className;
+  input String modifier = "";
+  input Boolean prettyPrint = false;
+  output String result;
+external "builtin";
+end getModelInstance;
+
+function getModelInstanceIcon
+  "Dumps only the Icon and IconMap annotations of a model, using the same JSON
+   format as getModelInstance."
+  input TypeName className;
+  input Boolean prettyPrint = false;
+  output String result;
+external "builtin";
+end getModelInstanceIcon;
+
+function modifierToJSON
+  "Parses a modifier given as a string and dumps it as JSON."
+  input String modifier;
+  input Boolean prettyPrint = false;
+  output String json;
+external "builtin";
+end modifierToJSON;
+
+function storeAST
+  output Integer id;
+external "builtin";
+annotation(preferredView="text",Documentation(info="<html>
+<p>Stores the AST and returns an id that can be used to restore it with restoreAST.</p>
+</html>"));
+end storeAST;
+
+function restoreAST
+  input Integer id;
+  output Boolean success;
+external "builtin";
+annotation(preferredView="text",Documentation(info="<html>
+<p>Restores an AST that was previously stored with storeAST.</p>
+</html>"));
+end restoreAST;
 
 // OMSimulator API calls
 type oms_system = enumeration(oms_system_none,oms_system_tlm, oms_system_wc,oms_system_sc);

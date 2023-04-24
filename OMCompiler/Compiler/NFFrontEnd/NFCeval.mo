@@ -334,6 +334,7 @@ algorithm
         else
           // Crefs can be evaluated even if they have non-evaluated subscripts.
           outExp := evalCref(e.cref, e, target, evalSubscripts = false);
+          outEvaluated := Expression.isLiteral(outExp);
         end if;
       then
         outExp;
@@ -697,7 +698,7 @@ algorithm
         Binding.CEVAL_BINDING(exp);
 
     // A record component without an explicit binding, create one from its children.
-    case Component.TYPED_COMPONENT(ty = Type.COMPLEX(complexTy = ComplexType.RECORD(rec_node)))
+    case Component.COMPONENT(ty = Type.COMPLEX(complexTy = ComplexType.RECORD(rec_node)))
       algorithm
         exp := makeRecordBindingExp(component.classInst, rec_node, component.ty, cref);
         binding := Binding.CEVAL_BINDING(exp);
@@ -709,7 +710,7 @@ algorithm
         binding;
 
     // A record array component without an explicit binding, create one from its children.
-    case Component.TYPED_COMPONENT(ty = Type.ARRAY(elementType = ty as
+    case Component.COMPONENT(ty = Type.ARRAY(elementType = ty as
         Type.COMPLEX(complexTy = ComplexType.RECORD(rec_node))))
       algorithm
         exp := Expression.mapCrefScalars(Expression.fromCref(cref),
@@ -798,7 +799,7 @@ algorithm
     args := arg :: args;
   end for;
 
-  exp := Expression.makeRecord(InstNode.scopePath(recordNode, includeRoot = true), recordType, args);
+  exp := Expression.makeRecord(InstNode.fullPath(recordNode), recordType, args);
 end makeRecordBindingExp;
 
 function evalTypename
