@@ -209,7 +209,7 @@ public function loadClassFromMp
   input Boolean encrypted = false;
   output Option<Absyn.Class> outClass;
 algorithm
-  outClass := match (id,path,name,isDir,optEncoding)
+  outClass := match isDir
     local
       String pd,encoding,encodingfile;
       Option<Absyn.Class> cl;
@@ -217,8 +217,18 @@ algorithm
       LoadFileStrategy strategy;
       Boolean lveStarted;
       Option<Integer> lveInstance;
+      String tmp_dir;
 
-    case (_,_,_,false,_)
+    case _ guard Util.stringEndsWith(name, ".mol")
+      algorithm
+        tmp_dir := System.createTemporaryDirectory(id);
+        System.systemCall("unzip -q -o -d \"" + tmp_dir + "\" \"" + name + "\"");
+        cl := loadClassFromMp(id, path, tmp_dir + "/" + id, true, optEncoding, encrypted);
+        System.removeDirectory(tmp_dir);
+      then
+        cl;
+
+    case false
       equation
         pd = Autoconf.pathDelimiter;
         /* Check for path/package.encoding; OpenModelica extension */
@@ -229,7 +239,7 @@ algorithm
       then
         cl;
 
-    case (_,_,_,true,_)
+    case true
       equation
         /* Check for path/package.encoding; OpenModelica extension */
         pd = Autoconf.pathDelimiter;
