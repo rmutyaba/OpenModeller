@@ -59,7 +59,8 @@ public:
     Modelica,         /* Used to represent Modelica models. */
     Text,             /* Used to represent text based files. */
     CompositeModel,   /* Used to represent CompositeModel files. */
-    OMS               /* Used to represent OMSimulator models. */
+    OMS,              /* Used to represent OMSimulator models. */
+    CRML              /* Used to represent CRML models. */
   };
   enum Access {
     hide,
@@ -322,6 +323,7 @@ public:
   void showHideProtectedClasses();
   bool unloadClass(LibraryTreeItem *pLibraryTreeItem, bool askQuestion = true, bool doDeleteClass = true);
   bool unloadCompositeModelOrTextFile(LibraryTreeItem *pLibraryTreeItem, bool askQuestion = true);
+  bool unloadCRMLFile(LibraryTreeItem *pLibraryTreeItem, bool askQuestion = true);
   bool unloadOMSModel(LibraryTreeItem *pLibraryTreeItem, bool doDelete = true, bool askQuestion = true);
   void getExpandedLibraryTreeItemsList(LibraryTreeItem *pLibraryTreeItem, QStringList *pExpandedLibraryTreeItemsList);
   void expandLibraryTreeItems(LibraryTreeItem *pLibraryTreeItem, QStringList expandedLibraryTreeItemsList);
@@ -408,6 +410,7 @@ private:
   QAction *mpDuplicateClassAction;
   QAction *mpUnloadClassAction;
   QAction *mpUnloadCompositeModelFileAction;
+  QAction *mpUnloadCRMLFileAction;
   QAction *mpNewFileAction;
   QAction *mpNewFileEmptyAction;
   QAction *mpNewFolderAction;
@@ -457,6 +460,7 @@ public slots:
   void duplicateClass();
   void unloadClass();
   void unloadCompositeModelOrTextFile();
+  void unloadCRMLFile();
   void createNewFile();
   void createNewFileEmpty();
   void createNewFolder();
@@ -493,6 +497,7 @@ public:
                 bool loadExternalModel = false);
   void openModelicaFile(QString fileName, QString encoding = Helper::utf8, bool showProgress = true, bool secondAttempt = false);
   void openEncrytpedModelicaLibrary(QString fileName, QString encoding = Helper::utf8, bool showProgress = true);
+  void openCRMLFile(QFileInfo fileInfo, QString encoding = Helper::utf8, bool showProgress = true);
   void openCompositeModelOrTextFile(QFileInfo fileInfo, bool showProgress = true);
   void openDirectory(QFileInfo fileInfo, bool showProgress = true);
   void openOMSModelFile(QFileInfo fileInfo, bool showProgress = true);
