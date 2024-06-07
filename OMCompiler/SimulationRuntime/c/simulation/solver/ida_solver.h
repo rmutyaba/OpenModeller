@@ -38,18 +38,21 @@
 #include "simulation_data.h"
 #include "util/simulation_options.h"
 #include "simulation/solver/solver_main.h"
-#include "omc_config.h" /* for WITH_SUNDIALS */
+#ifndef OMC_FMI_RUNTIME
+  #include "omc_config.h" /* for OMC_HAVE_CVODE */
+#endif
 
-#ifdef WITH_SUNDIALS
+#ifdef OMC_HAVE_IDA
 
 #include <idas/idas.h>
 #include <nvector/nvector_serial.h>
 #include <sunlinsol/sunlinsol_dense.h>       /* Default dense linear solver */
+#ifndef OMC_FMI_RUNTIME
 #include <sunlinsol/sunlinsol_klu.h>         /* Sparse linear solver KLU */
 #include <sunlinsol/sunlinsol_spgmr.h>      /* Scaled, Preconditioned, Generalized Minimum Residual iterative linear solver */
 #include <sunlinsol/sunlinsol_spbcgs.h>     /* Scaled, Preconditioned, Bi-Conjugate Gradient, Stabilized iterative linear solver */
 #include <sunlinsol/sunlinsol_sptfqmr.h>    /* Scaled, Preconditioned Transpose-Free Quasi-Minimal Residual iterative linear solver */
-
+#endif  // OMC_FMI_RUNTIME
 
 /* readability */
 #define MINIMAL_SCALE_FACTOR 1e-8
@@ -123,17 +126,64 @@ typedef struct IDA_SOLVER
 
 /* initialize main ida Data */
 int ida_solver_initial(DATA* data, threadData_t *threadData,
-                       SOLVER_INFO* solverInfo, IDA_SOLVER *idaData);
+                       SOLVER_INFO* solverInfo, IDA_SOLVER *idaData,
+                       modelica_boolean isFMI);
 
 /* deinitialize main ida Data */
-void ida_solver_deinitial(IDA_SOLVER *idaData);
+int ida_solver_deinitial(IDA_SOLVER *idaData);
 
 /* main ida function to make a step */
 int ida_solver_step(DATA* simData, threadData_t *threadData, SOLVER_INFO* solverInfo);
 
+/*called by fmi cs*/
+int ida_solver_fmi_step(DATA* data, threadData_t *threadData, SOLVER_INFO* solverInfo, double tNext, double* states, void* fmuComponent);
+
 /* event handing reinitialization function  */
 int ida_event_update(DATA* data, threadData_t *threadData);
 
-#endif  /* #ifdef WITH_SUNDIALS */
+#else /* OMC_HAVE_IDA */
+typedef void IDA_SOLVER;
+
+int ida_solver_initial(DATA *data, threadData_t *threadData, SOLVER_INFO *solverInfo, IDA_SOLVER *idaData, modelica_boolean isFMI)
+{
+#ifdef OMC_FMI_RUNTIME
+  printf("##IDA## SUNDIALS not available in FMU. See OpenModelica command line flag \"--fmiFlags\" from \"omc --help\" on how to enable IDA in FMUs.\n");
+  return -1;
+#else
+  throwStreamPrint(threadData, "##IDA## SUNDIALS not available. Reconfigure omc with SUNDIALS.\n");
+#endif
+}
+
+int ida_solver_deinitial(IDA_SOLVER *idaData)
+{
+#ifdef OMC_FMI_RUNTIME
+  printf("##IDA## SUNDIALS not available in FMU. See OpenModelica command line flag \"--fmiFlags\" from \"omc --help\" on how to enable IDA in FMUs.\n");
+  return -1;
+#else
+  throwStreamPrint(NULL, "##IDA## SUNDIALS not available. Reconfigure omc with SUNDIALS.\n");
+#endif
+}
+
+int ida_solver_step(DATA *data, threadData_t *threadData, SOLVER_INFO *solverInfo)
+{
+#ifdef OMC_FMI_RUNTIME
+  printf("##IDA## SUNDIALS not available in FMU. See OpenModelica command line flag \"--fmiFlags\" from \"omc --help\" on how to enable IDA in FMUs.\n");
+  return -1;
+#else
+  throwStreamPrint(threadData, "##IDA## SUNDIALS not available. Reconfigure omc with SUNDIALS.\n");
+#endif
+}
+
+int ida_solver_fmi_step(DATA* data, threadData_t* threadData, SOLVER_INFO* solverInfo, double tNext, double* states, void* fmuComponent)
+{
+#ifdef OMC_FMI_RUNTIME
+  printf("##IDA## SUNDIALS not available in FMU. See OpenModelica command line flag \"--fmiFlags\" from \"omc --help\" on how to enable IDA in FMUs.\n");
+  return -1;
+#else
+  throwStreamPrint(threadData, "##IDA## SUNDIALS not available. Reconfigure omc with SUNDIALS.\n");
+#endif
+}
+
+#endif  /* #ifdef OMC_HAVE_IDA */
 
 #endif  /* #ifndef OMC_IDA_SOLVER_H*/

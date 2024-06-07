@@ -4077,7 +4077,7 @@ algorithm
   end if;
 
   // Check flag fmiFlags if we need additional 3rdParty runtime libs and files
-  needs3rdPartyLibs := SimCodeUtil.cvodeFmiFlagIsSet(SimCodeUtil.createFMISimulationFlags(false));
+  needs3rdPartyLibs := SimCodeUtil.sundialsFmiFlagIsSet(SimCodeUtil.createFMISimulationFlags(false));
 
   // Warn about deprecated Makefile build
   if not Flags.getConfigBool(Flags.FMU_CMAKE_BUILD) then
