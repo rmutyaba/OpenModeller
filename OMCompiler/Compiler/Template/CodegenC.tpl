@@ -4799,7 +4799,6 @@ template computeVarIndices(SimVars vars, String modelNamePrefix)
       /* enumParamVars */
 
       /* extObjVars */
-      <%computeVarIndicesList(extObjVars)%>
 
       /* constVars */
       <%computeVarIndicesList(constVars)%>
